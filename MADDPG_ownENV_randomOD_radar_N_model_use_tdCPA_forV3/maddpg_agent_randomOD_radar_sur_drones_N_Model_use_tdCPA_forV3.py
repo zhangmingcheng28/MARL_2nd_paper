@@ -36,7 +36,7 @@ class MADDPG:
     def __init__(self, actor_dim, critic_dim, dim_act, actor_hidden_state_size, gru_history_length, n_agents,
                  args, cr_lr, ac_lr, gamma, tau, full_observable_critic_flag, use_GRU_flag, use_single_portion_selfATT,
                  use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only, normalizer, use_nearestN_neigh_wRadar,
-                 shared_one_actor_one_critic, device):
+                 shared_one_actor_one_critic, shared_one_actor_central_critic, device):
         self.args = args
         self.mode = args.mode
         self.actors = []
@@ -67,6 +67,8 @@ class MADDPG:
             elif use_nearestN_neigh_wRadar:
                 self.actors = ActorNetwork_nearestN_neigh_wRadar(actor_dim, dim_act)
             elif shared_one_actor_one_critic:
+                self.actors = ActorNetwork_TwoPortion(actor_dim, dim_act)
+            elif shared_one_actor_central_critic:
                 self.actors = ActorNetwork_TwoPortion(actor_dim, dim_act)
             else:
                 # self.actors = ActorNetwork_TwoPortion(actor_dim, dim_act)
@@ -120,6 +122,9 @@ class MADDPG:
                 self.critics = critic_single_nearestN_neigh_wRadar(critic_dim, n_agents, dim_act, gru_history_length,
                                                                actor_hidden_state_size)
             elif shared_one_actor_one_critic:
+                self.critics = critic_single_TwoPortion(critic_dim, n_agents, dim_act, gru_history_length,
+                                                        actor_hidden_state_size)
+            elif shared_one_actor_central_critic:
                 self.critics = critic_single_TwoPortion(critic_dim, n_agents, dim_act, gru_history_length,
                                                         actor_hidden_state_size)
             else:

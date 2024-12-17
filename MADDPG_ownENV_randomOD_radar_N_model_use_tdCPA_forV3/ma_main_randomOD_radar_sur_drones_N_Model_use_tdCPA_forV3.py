@@ -118,8 +118,7 @@ def main(args):
     # shared_one_actor_one_critic = False
 
     # shared_one_actor_central_critic = True
-    # shared_one_actor_central_critic = False
-
+    shared_one_actor_central_critic = False
     # ---- end of new flag ---
 
     if use_allNeigh_wRadar:
@@ -283,7 +282,7 @@ def main(args):
     torch.manual_seed(args.seed)  # this is the seed
 
     if args.algo == "maddpg":
-        model = MADDPG(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args, criticNet_lr, actorNet_lr, args.gamma, args.tau, full_observable_critic_flag, use_GRU_flag, use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only, env.normalizer, use_nearestN_neigh_wRadar, shared_one_actor_one_critic, device)
+        model = MADDPG(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args, criticNet_lr, actorNet_lr, args.gamma, args.tau, full_observable_critic_flag, use_GRU_flag, use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only, env.normalizer, use_nearestN_neigh_wRadar, shared_one_actor_one_critic, shared_one_actor_central_critic, device)
 
     episode = 0
     current_row = 0

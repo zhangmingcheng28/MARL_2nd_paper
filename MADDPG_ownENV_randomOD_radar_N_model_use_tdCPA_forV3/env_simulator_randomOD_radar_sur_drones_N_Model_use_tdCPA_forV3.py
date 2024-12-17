@@ -1286,17 +1286,50 @@ class env_simulator:
                 sensed_shortest_dist = cur_host_line.length
                 distances[point_deg] = sensed_shortest_dist
 
-                # check if line intersect with any boundaries
-                for i, line in enumerate(self.boundaries):
-                    if cur_host_line.intersects(line):
-                        intersection_point = cur_host_line.intersection(line)
-                        dist_to_intersection = LineString([point_pos, intersection_point]).length
-                        if dist_to_intersection < sensed_shortest_dist:
-                            # update global minimum end point and distance
-                            ed_points[point_deg] = intersection_point
-                            min_intersection_pt = intersection_point
-                            sensed_shortest_dist = dist_to_intersection
-                            distances[point_deg] = sensed_shortest_dist
+                # # check if line intersect with any boundaries
+                # for i, line in enumerate(self.boundaries):
+                #     if cur_host_line.intersects(line):
+                #         intersection_point = cur_host_line.intersection(line)
+                #         dist_to_intersection = LineString([point_pos, intersection_point]).length
+                #         if dist_to_intersection < sensed_shortest_dist:
+                #             # update global minimum end point and distance
+                #             ed_points[point_deg] = intersection_point
+                #             min_intersection_pt = intersection_point
+                #             sensed_shortest_dist = dist_to_intersection
+                #             distances[point_deg] = sensed_shortest_dist
+
+                # check if line intersect with any obstacles or boundaries
+                possible_interaction = polygons_tree_wBound.query(cur_host_line)
+                if len(possible_interaction) != 0:  # check if a list is empty
+                    for polygon_idx in possible_interaction:
+                        # Check if the line intersects with the building polygon's boundary
+                        if polygons_list_wBound[polygon_idx].geom_type == "Polygon":
+                            if cur_host_line.intersects(polygons_list_wBound[polygon_idx]):
+                                intersection_point = cur_host_line.intersection(polygons_list_wBound[polygon_idx].boundary)
+                                if intersection_point.geom_type == 'MultiPoint':
+                                    nearest_point = min(intersection_point.geoms,
+                                                        key=lambda point: drone_ctr.distance(point))
+                                else:
+                                    nearest_point = intersection_point
+                        else:  # possible intersection is not a polygon but a LineString, meaning it is a boundary line
+                            if cur_host_line.intersects(polygons_list_wBound[polygon_idx]):
+                                intersection = cur_host_line.intersection(polygons_list_wBound[polygon_idx])
+                                if intersection.geom_type == 'Point':
+                                    nearest_point = intersection.distance(drone_ctr)
+                                # If it's a line of intersection, add each end points of the intersection line
+                                elif intersection.geom_type == 'LineString':
+                                    for point in intersection.coords:  # loop through both end of the intersection line
+                                        one_end_of_intersection_line = Point(point)
+                                        temp_shortest_dist = one_end_of_intersection_line.distance(drone_ctr)
+                                        if temp_shortest_dist < sensed_shortest_dist:
+                                            nearest_point = one_end_of_intersection_line
+                    # update global minimum end point and distance
+                    ed_points[point_deg] = nearest_point
+                    min_intersection_pt = nearest_point
+                    sensed_shortest_dist = min_intersection_pt.distance(drone_ctr)
+                    distances[point_deg] = sensed_shortest_dist
+
+
 
                 # check if line intersect with any clouds
                 # initialize cloud context nearest nearest distance and point
