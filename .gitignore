@@ -1,3 +1,5 @@
 
 /.idea
 *.pyc
+/MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3/wandb
+MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3/Aircraft.svg

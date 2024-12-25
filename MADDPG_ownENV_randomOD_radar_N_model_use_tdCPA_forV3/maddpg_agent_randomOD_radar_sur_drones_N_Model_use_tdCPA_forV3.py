@@ -558,11 +558,11 @@ class MADDPG:
                     action_i = self.actors([stacked_elem_0, stacked_elem_1, stacked_elem_2])
                 elif use_nearestN_neigh_wRadar:
                     action_i = self.actors([stacked_elem_0, stacked_elem_1, stacked_elem_2])
-                    ac = action_i
+                    # ac = action_i
                 else:
                     # action_i = self.actors([stacked_elem_0, stacked_elem_2])
                     action_i = self.actors([stacked_elem_0, stacked_elem_2, cur_mask_batch])
-                    ac = action_i
+                ac = action_i
                     # ac = action_i.squeeze(0)  # replace the actor from self.actors[agent] into action batch
 
 

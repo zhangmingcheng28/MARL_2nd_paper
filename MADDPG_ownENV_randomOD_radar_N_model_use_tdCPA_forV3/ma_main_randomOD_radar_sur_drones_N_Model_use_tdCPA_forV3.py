@@ -73,8 +73,8 @@ def main(args):
     use_wanDB = False
     # use_wanDB = True
 
-    evaluation_by_episode = True
-    # evaluation_by_episode = False
+    # evaluation_by_episode = True
+    evaluation_by_episode = False
 
     # get_evaluation_status = True  # have figure output
     get_evaluation_status = False  # no figure output, mainly obtain collision rate
@@ -100,15 +100,15 @@ def main(args):
     # use_selfATT_with_radar = True
     use_selfATT_with_radar = False
 
-    # use_allNeigh_wRadar = True
-    use_allNeigh_wRadar = False
+    use_allNeigh_wRadar = True
+    # use_allNeigh_wRadar = False
 
     # use_nearestN_neigh_wRadar = True
     use_nearestN_neigh_wRadar = False
     N_neigh = 2
 
-    include_other_AC = True  # used for change skin during training, whether include the surrounding ACs.
-    # include_other_AC = False
+    # include_other_AC = True  # used for change skin during training, whether include the surrounding ACs.
+    include_other_AC = False
 
     save_cur_eva_OD = True
     # save_cur_eva_OD = False
@@ -342,11 +342,11 @@ def main(args):
         # args.max_episodes = 250
         # args.max_episodes = 25
         # pre_fix = r'D:\MADDPG_2nd_jp\190824_15_17_16\interval_record_eps\chapter_5_5_3cL_randomOD_16000'
-        # pre_fix = r'D:\MADDPG_2nd_jp\190824_15_17_16\interval_record_eps'
-        pre_fix = r'D:\MADDPG_2nd_jp\221124_17_06_22 _interval_record_eps\interval_record_eps'
+        pre_fix = r'D:\MADDPG_2nd_jp\231224_12_06_15\interval_record_eps'
+        # pre_fix = r'D:\MADDPG_2nd_jp\181224_19_35_29\interval_record_eps\interval_record_eps'
         # episode_to_check = str(10000)
         # pre_fix = r'F:\OneDrive_NTU_PhD\OneDrive - Nanyang Technological University\DDPG_2ndJournal\dim_8_transfer_learning'
-        episode_to_check = str(1000)
+        episode_to_check = str(20000)
         model_list = []
         if full_observable_critic_flag:
             for i in range(total_agentNum):
@@ -443,10 +443,10 @@ def main(args):
 
                 one_step_reward_start = time.time()
                 (reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder,
-                 step_collision_record, bound_building_check) = env.ss_reward(step, step_reward_record,
+                 step_collision_record, bound_building_check) = env.ss_reward_Mar(step, step_reward_record,
                                                                               step_collision_record, dummy_xy,
                                                                               full_observable_critic_flag, args,
-                                                                              evaluation_by_episode, own_obs_only)   # remove reached agent here
+                                                                              evaluation_by_episode)   # remove reached agent here
                 reward_generation_time = (time.time() - one_step_reward_start)*1000
                 # print("current step reward time used is {} milliseconds".format(reward_generation_time))
 
@@ -900,15 +900,17 @@ def main(args):
                 gru_history.append(np.array(norm_cur_state[0]))
 
                 # action, step_noise_val = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, gru_history, noisy=False) # noisy is false because we are using stochastic policy
-                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens, cur_agent_masks_record = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, use_nearestN_neigh_wRadar, env.all_agents, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
+                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens, cur_agent_masks_record = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, use_nearestN_neigh_wRadar, env.all_agents, shared_one_actor_one_critic, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
 
                 # nearest_two_drones
                 next_state, norm_next_state, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record_aft_act = env.step(action, step, acc_max, args, evaluation_by_episode, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh)  # no heading update here
                 # reward_aft_action, done_aft_action, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check = env.ss_reward(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode, own_obs_only)
                 # reward_aft_action, done_aft_action, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check = env.ss_reward_Mar(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode)
-                reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder, step_collision_record, bound_building_check = env.ss_reward_Mar_changeskin(
-                    step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args,
-                    evaluation_by_episode, evaluation_by_fixed_ar)  # remove reached agent here
+                (reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder,
+                 step_collision_record, bound_building_check) = env.ss_reward_Mar(step, step_reward_record,
+                                                                                  step_collision_record, dummy_xy,
+                                                                                  full_observable_critic_flag, args,
+                                                                                  evaluation_by_episode)
                 # reward_aft_action, done_aft_action, check_goal, step_reward_record = env.get_step_reward_5_v3(step, step_reward_record)
 
                 step += 1
@@ -1221,15 +1223,15 @@ if __name__ == '__main__':
     parser.add_argument('--scenario', default="simple_spread", type=str)
     parser.add_argument('--max_episodes', default=20000, type=int)  # run for a total of 50000 episodes
     parser.add_argument('--algo', default="maddpg", type=str, help="commnet/bicnet/maddpg")
-    parser.add_argument('--mode', default="train", type=str, help="train/eval")
-    parser.add_argument('--episode_length', default=500, type=int)  # maximum play per episode
+    parser.add_argument('--mode', default="eval", type=str, help="train/eval")
+    parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=120, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
     parser.add_argument('--memory_length', default=int(1e5), type=int)
     # parser.add_argument('--memory_length', default=int(1e4), type=int)
     parser.add_argument('--seed', default=777, type=int)  # may choose to use 3407
     # parser.add_argument('--batch_size', default=2, type=int)  # original 512
-    parser.add_argument('--batch_size', default=10, type=int)  # original 512
+    parser.add_argument('--batch_size', default=512, type=int)  # original 512
     # parser.add_argument('--batch_size', default=3, type=int)  # original 512
     # parser.add_argument('--batch_size', default=1536, type=int)  # original 512
     parser.add_argument('--gamma', default=0.95, type=float)

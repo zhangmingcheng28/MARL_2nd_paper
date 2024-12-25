@@ -521,8 +521,15 @@ def animate(frame_num, ax, env, trajectory_eachPlay):
     # plt.axhline(y=env.bound[3], c="green")
     plt.xlabel("X axis")
     plt.ylabel("Y axis")
-    aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
+    # aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
+    aircraft_svg_path = r'D:\MARL_2nd_paper\MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3\Aircraft.svg'  # Replace with your SVG path
     plane_img = load_svg_image(aircraft_svg_path)
+
+    # draw occupied_poly
+    for one_poly in env.world_map_2D_polyList[0][0]:
+        one_poly_mat = shapelypoly_to_matpoly(one_poly, True, 'y', 'b')
+        ax.add_patch(one_poly_mat)
+
     # Define colors with transparency (alpha)
     colors = [
         (0.5, 0, 0.5),  # Purple
@@ -536,90 +543,90 @@ def animate(frame_num, ax, env, trajectory_eachPlay):
         (1, 0.65, 0),  # Orange
     ]
 
-    for line_idx, line in enumerate(env.potential_ref_line):
-        x, y = line.xy
-        plt.plot(x, y, linestyle='solid', linewidth=10, color=colors[line_idx], alpha=0.2)
-        plt.plot(line.coords[0][0], line.coords[0][1], marker=MarkerStyle("^"), color=colors[line_idx])
-        plt.plot(line.coords[-1][0], line.coords[-1][1], marker='*', color=colors[line_idx])
+    # for line_idx, line in enumerate(env.potential_ref_line):
+    #     x, y = line.xy
+    #     plt.plot(x, y, linestyle='solid', linewidth=10, color=colors[line_idx], alpha=0.2)
+    #     plt.plot(line.coords[0][0], line.coords[0][1], marker=MarkerStyle("^"), color=colors[line_idx])
+    #     plt.plot(line.coords[-1][0], line.coords[-1][1], marker='*', color=colors[line_idx])
 
-    # for agentIdx, agent in env.all_agents.items():
-    #     plt.plot(agent.ini_pos[0], agent.ini_pos[1],
-    #              marker=MarkerStyle("^"), color=colors[agentIdx])
-    #     plt.text(agent.ini_pos[0], agent.ini_pos[1], agent.agent_name)
-    #     plt.plot(agent.goal[-1][0], agent.goal[-1][1], marker='*', color=colors[agentIdx], markersize=10)
-    #     plt.text(agent.goal[-1][0], agent.goal[-1][1], agent.agent_name)
+    for agentIdx, agent in env.all_agents.items():
+        plt.plot(agent.ini_pos[0], agent.ini_pos[1],
+                 marker=MarkerStyle("^"), color=colors[agentIdx])
+        plt.text(agent.ini_pos[0], agent.ini_pos[1], agent.agent_name)
+        plt.plot(agent.goal[-1][0], agent.goal[-1][1], marker='*', color=colors[agentIdx], markersize=10)
+        plt.text(agent.goal[-1][0], agent.goal[-1][1], agent.agent_name)
 
-        # # link individual drone's starting position with its goal
-        # ini = agent.ini_pos
-        # for wp in agent.ref_line.coords:
-        #     plt.plot([wp[0], ini[0]], [wp[1], ini[1]], linestyle='solid', linewidth=10, color=colors[agentIdx],
-        #              alpha=0.2)
-        #     ini = wp
+        # link individual drone's starting position with its goal
+        ini = agent.ini_pos
+        for wp in agent.ref_line.coords:
+            plt.plot([wp[0], ini[0]], [wp[1], ini[1]], linestyle='solid', linewidth=10, color=colors[agentIdx],
+                     alpha=0.2)
+            ini = wp
 
-    # display cloud
-    interval = 5  # Change cluster coordinates around centre every 10 frames
-    for cloud_idx, cloud_agent in enumerate(env.cloud_config):
-        # Define the fixed center
-        center_x, center_y = cloud_agent.trajectory[frame_num].x, cloud_agent.trajectory[frame_num].y
-        cloud_centre = Point(center_x, center_y)
-        cloud_poly = cloud_centre.buffer(cloud_agent.radius)
-        # ___add boundary circle for clouds---
-        # matp_poly = shapelypoly_to_matpoly(cloud_poly, False, 'blue')  # the 3rd parameter is the edge color
-        # matp_poly.set_zorder(5)
-        # ax.add_patch(matp_poly)
-        # Generate multiple clusters of random points within the specified range
-        num_points_per_cluster = 5000
-        num_clusters = 15
-        x_range = cloud_agent.spawn_cluster_pt_x_range
-        y_range = cloud_agent.spawn_cluster_pt_y_range
-        if frame_num % interval == 0:
-            cluster_centers_x = np.random.uniform(center_x + x_range[0], center_x + x_range[1], num_clusters)
-            cluster_centers_y = np.random.uniform(center_y + y_range[0], center_y + y_range[1], num_clusters)
-            cluster_centers = np.column_stack((cluster_centers_x, cluster_centers_y))
-            cloud_agent.cluster_centres = cluster_centers
-
-        # Generate points for each cluster with controlled density
-        x, y = [], []
-        for cx, cy in cloud_agent.cluster_centres:
-            angles = np.random.uniform(0, 2 * np.pi, num_points_per_cluster)
-            radii = np.random.normal(0, 0.1, num_points_per_cluster)  # Decrease spread for higher density
-            x.extend(cx + radii * np.cos(angles))
-            y.extend(cy + radii * np.sin(angles))
-        x = np.array(x)
-        y = np.array(y)
-        # Create a 2D histogram to serve as the contour data
-        margin = 25
-        contour_min_x = center_x + x_range[0] - margin
-        contour_max_x = center_x + x_range[1] + margin
-        contour_min_y = center_y + y_range[0] - margin
-        contour_max_y = center_y + y_range[1] + margin
-        hist, xedges, yedges = np.histogram2d(x, y, bins=(100, 100),
-                                              range=[[contour_min_x, contour_max_x], [contour_min_y, contour_max_y]])
-        # Smooth the histogram to create a more organic shape
-        hist = gaussian_filter(hist, sigma=5)  # Adjust sigma for better control
-
-        # Create the custom colormap from green to yellow to red
-        cmap = LinearSegmentedColormap.from_list('green_yellow_red', ['green', 'yellow', 'red'])
-        X, Y = np.meshgrid(xedges[:-1] + 0.5 * (xedges[1] - xedges[0]), yedges[:-1] + 0.5 * (yedges[1] - yedges[0]))
-        contour_levels = np.linspace(hist.min(), hist.max(), 10)
-        contour = ax.contourf(X, Y, hist, levels=contour_levels, cmap=cmap)
-
-        level_color = cmap(
-            (contour_levels[1] - contour_levels.min()) / (contour_levels.max() - contour_levels.min()))
-        # Extract the outermost contour path and overlay it with a black line
-        outermost_contour = ax.contour(X, Y, hist, levels=[contour_levels[1]], colors=[level_color],
-                                       linewidths=1)  # this line must be present to
-        # Extract the vertices of the outermost contour path
-        outermost_path = outermost_contour.collections[0].get_paths()[0]
-        vertices = outermost_path.vertices
-        x_clip, y_clip = vertices[:, 0], vertices[:, 1]
-        # ax.plot(x_clip, y_clip, color="crimson")
-        coordinates = np.column_stack((x_clip, y_clip))
-        clippath = Path(coordinates)
-        patch = PathPatch(clippath, facecolor='none')
-        ax.add_patch(patch)
-        for c in contour.collections:
-            c.set_clip_path(patch)
+    # # display cloud
+    # interval = 5  # Change cluster coordinates around centre every 10 frames
+    # for cloud_idx, cloud_agent in enumerate(env.cloud_config):
+    #     # Define the fixed center
+    #     center_x, center_y = cloud_agent.trajectory[frame_num].x, cloud_agent.trajectory[frame_num].y
+    #     cloud_centre = Point(center_x, center_y)
+    #     cloud_poly = cloud_centre.buffer(cloud_agent.radius)
+    #     # ___add boundary circle for clouds---
+    #     # matp_poly = shapelypoly_to_matpoly(cloud_poly, False, 'blue')  # the 3rd parameter is the edge color
+    #     # matp_poly.set_zorder(5)
+    #     # ax.add_patch(matp_poly)
+    #     # Generate multiple clusters of random points within the specified range
+    #     num_points_per_cluster = 5000
+    #     num_clusters = 15
+    #     x_range = cloud_agent.spawn_cluster_pt_x_range
+    #     y_range = cloud_agent.spawn_cluster_pt_y_range
+    #     if frame_num % interval == 0:
+    #         cluster_centers_x = np.random.uniform(center_x + x_range[0], center_x + x_range[1], num_clusters)
+    #         cluster_centers_y = np.random.uniform(center_y + y_range[0], center_y + y_range[1], num_clusters)
+    #         cluster_centers = np.column_stack((cluster_centers_x, cluster_centers_y))
+    #         cloud_agent.cluster_centres = cluster_centers
+    #
+    #     # Generate points for each cluster with controlled density
+    #     x, y = [], []
+    #     for cx, cy in cloud_agent.cluster_centres:
+    #         angles = np.random.uniform(0, 2 * np.pi, num_points_per_cluster)
+    #         radii = np.random.normal(0, 0.1, num_points_per_cluster)  # Decrease spread for higher density
+    #         x.extend(cx + radii * np.cos(angles))
+    #         y.extend(cy + radii * np.sin(angles))
+    #     x = np.array(x)
+    #     y = np.array(y)
+    #     # Create a 2D histogram to serve as the contour data
+    #     margin = 25
+    #     contour_min_x = center_x + x_range[0] - margin
+    #     contour_max_x = center_x + x_range[1] + margin
+    #     contour_min_y = center_y + y_range[0] - margin
+    #     contour_max_y = center_y + y_range[1] + margin
+    #     hist, xedges, yedges = np.histogram2d(x, y, bins=(100, 100),
+    #                                           range=[[contour_min_x, contour_max_x], [contour_min_y, contour_max_y]])
+    #     # Smooth the histogram to create a more organic shape
+    #     hist = gaussian_filter(hist, sigma=5)  # Adjust sigma for better control
+    #
+    #     # Create the custom colormap from green to yellow to red
+    #     cmap = LinearSegmentedColormap.from_list('green_yellow_red', ['green', 'yellow', 'red'])
+    #     X, Y = np.meshgrid(xedges[:-1] + 0.5 * (xedges[1] - xedges[0]), yedges[:-1] + 0.5 * (yedges[1] - yedges[0]))
+    #     contour_levels = np.linspace(hist.min(), hist.max(), 10)
+    #     contour = ax.contourf(X, Y, hist, levels=contour_levels, cmap=cmap)
+    #
+    #     level_color = cmap(
+    #         (contour_levels[1] - contour_levels.min()) / (contour_levels.max() - contour_levels.min()))
+    #     # Extract the outermost contour path and overlay it with a black line
+    #     outermost_contour = ax.contour(X, Y, hist, levels=[contour_levels[1]], colors=[level_color],
+    #                                    linewidths=1)  # this line must be present to
+    #     # Extract the vertices of the outermost contour path
+    #     outermost_path = outermost_contour.collections[0].get_paths()[0]
+    #     vertices = outermost_path.vertices
+    #     x_clip, y_clip = vertices[:, 0], vertices[:, 1]
+    #     # ax.plot(x_clip, y_clip, color="crimson")
+    #     coordinates = np.column_stack((x_clip, y_clip))
+    #     clippath = Path(coordinates)
+    #     patch = PathPatch(clippath, facecolor='none')
+    #     ax.add_patch(patch)
+    #     for c in contour.collections:
+    #         c.set_clip_path(patch)
 
     for a_idx, agent in enumerate(trajectory_eachPlay[frame_num]):
         x, y = agent[0], agent[1]
@@ -732,7 +739,8 @@ def save_gif(env, trajectory_eachPlay, pre_fix, episode_to_check, episode):
 
 
 def view_static_traj(env, trajectory_eachPlay, save_path=None, max_time_step=None):
-    aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
+    # aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
+    aircraft_svg_path = r'D:\MARL_2nd_paper\MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3\Aircraft.svg'  # Replace with your SVG path
     plane_img = load_svg_image(aircraft_svg_path)
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
     matplotlib.use('TkAgg')

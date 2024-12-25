@@ -1301,21 +1301,27 @@ class env_simulator:
                 # check if line intersect with any obstacles or boundaries
                 possible_interaction = polygons_tree_wBound.query(cur_host_line)
                 if len(possible_interaction) != 0:  # check if a list is empty
+                    nearest_point = end_point
                     for polygon_idx in possible_interaction:
                         # Check if the line intersects with the building polygon's boundary
                         if polygons_list_wBound[polygon_idx].geom_type == "Polygon":
                             if cur_host_line.intersects(polygons_list_wBound[polygon_idx]):
                                 intersection_point = cur_host_line.intersection(polygons_list_wBound[polygon_idx].boundary)
                                 if intersection_point.geom_type == 'MultiPoint':
-                                    nearest_point = min(intersection_point.geoms,
+                                    temp_nearest_point = min(intersection_point.geoms,
                                                         key=lambda point: drone_ctr.distance(point))
                                 else:
-                                    nearest_point = intersection_point
+                                    temp_nearest_point = intersection_point
+                                temp_shortest_dist = temp_nearest_point.distance(drone_ctr)
+                                if temp_shortest_dist < sensed_shortest_dist:
+                                    nearest_point = temp_nearest_point
                         else:  # possible intersection is not a polygon but a LineString, meaning it is a boundary line
                             if cur_host_line.intersects(polygons_list_wBound[polygon_idx]):
                                 intersection = cur_host_line.intersection(polygons_list_wBound[polygon_idx])
                                 if intersection.geom_type == 'Point':
-                                    nearest_point = intersection.distance(drone_ctr)
+                                    temp_shortest_dist = intersection.distance(drone_ctr)
+                                    if temp_shortest_dist < sensed_shortest_dist:
+                                        nearest_point = intersection
                                 # If it's a line of intersection, add each end points of the intersection line
                                 elif intersection.geom_type == 'LineString':
                                     for point in intersection.coords:  # loop through both end of the intersection line
