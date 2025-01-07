@@ -107,18 +107,18 @@ def main(args):
     use_nearestN_neigh_wRadar = False
     N_neigh = 2
 
-    # include_other_AC = True  # used for change skin during training, whether include the surrounding ACs.
+    # include_other_AC = True  # used for change skin during training, whether include the surrounding ACs for radar
     include_other_AC = False
 
     save_cur_eva_OD = True
     # save_cur_eva_OD = False
 
     # ---- new flag --- 2024
-    shared_one_actor_one_critic = True
+    shared_one_actor_one_critic = True  # not used
     # shared_one_actor_one_critic = False
 
-    # shared_one_actor_central_critic = True
-    shared_one_actor_central_critic = False
+    shared_one_actor_central_critic = True
+    # shared_one_actor_central_critic = False
     # ---- end of new flag ---
 
     if use_allNeigh_wRadar:
@@ -382,7 +382,7 @@ def main(args):
         eps_reset_start_time = time.time()
 
         cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, evaluation_by_fixed_ar,
-                                                    include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, show=0)
+                                                    include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, shared_one_actor_central_critic, show=0)
         eps_reset_time_used = (time.time()-eps_reset_start_time)*1000
         # print("current episode {} reset time used is {} milliseconds".format(episode, eps_reset_time_used))  # need to + 1 here, or else will misrecord as the previous episode
         step_collision_record = [[] for _ in range(total_agentNum)]  # reset at each episode, so that we can record down collision at each step for each agent.
@@ -426,7 +426,7 @@ def main(args):
                 step_obtain_action_time_start = time.time()
 
                 # action, step_noise_val = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, gru_history, noisy=False) # noisy is false because we are using stochastic policy
-                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens, cur_agent_masks_record = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, use_nearestN_neigh_wRadar, env.all_agents, shared_one_actor_one_critic, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
+                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens, cur_agent_masks_record = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, use_nearestN_neigh_wRadar, env.all_agents, shared_one_actor_central_critic, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
 
                 generate_action_time = (time.time() - step_obtain_action_time_start)*1000
                 # print("current step obtain action time used is {} milliseconds".format(generate_action_time))
@@ -594,35 +594,40 @@ def main(args):
                         # model.memory.push(obs, ac_tensor, next_obs, rw_tensor, done_tensor, history_tensor, cur_actor_hiddens, next_actor_hiddens)
                         model.memory.push(obs[0], obs[1], obs[2], ac_tensor, next_obs[0], next_obs[1], next_obs[2], rw_tensor, done_tensor, history_tensor, cur_actor_hiddens, next_actor_hiddens)
                     else:
-                        # ------- push to memory one by one ----------
-                        # for obs and next_obs
-                        one_agent_obs = []
-                        for i in range(total_agentNum):
-                            one_agent_one_portion = []
-                            for observation_portion in obs:
-                                if isinstance(observation_portion, list):
-                                    one_agent_one_portion.append(observation_portion[i])
-                                else:
-                                    one_agent_one_portion.append(observation_portion[i, :])
-                            one_agent_obs.append(one_agent_one_portion)
-                        one_agent_next_obs = []
-                        for i in range(total_agentNum):
-                            one_agent_one_portion = []
-                            for observation_portion in next_obs:
-                                if isinstance(observation_portion, list):
-                                    one_agent_one_portion.append(observation_portion[i])
-                                else:
-                                    one_agent_one_portion.append(observation_portion[i, :])
-                            one_agent_next_obs.append(one_agent_one_portion)
+                        if shared_one_actor_central_critic:
+                            model.memory.push(obs[0], obs[1], obs[2], ac_tensor, next_obs[0], next_obs[1], next_obs[2],
+                                              rw_tensor, done_tensor, history_tensor, cur_actor_hiddens,
+                                              next_actor_hiddens, cur_mask_tensor, nxt_mask_tensor)
+                        else:
+                            # ------- push to memory one by one ----------
+                            # for obs and next_obs
+                            one_agent_obs = []
+                            for i in range(total_agentNum):
+                                one_agent_one_portion = []
+                                for observation_portion in obs:
+                                    if isinstance(observation_portion, list):
+                                        one_agent_one_portion.append(observation_portion[i])
+                                    else:
+                                        one_agent_one_portion.append(observation_portion[i, :])
+                                one_agent_obs.append(one_agent_one_portion)
+                            one_agent_next_obs = []
+                            for i in range(total_agentNum):
+                                one_agent_one_portion = []
+                                for observation_portion in next_obs:
+                                    if isinstance(observation_portion, list):
+                                        one_agent_one_portion.append(observation_portion[i])
+                                    else:
+                                        one_agent_one_portion.append(observation_portion[i, :])
+                                one_agent_next_obs.append(one_agent_one_portion)
 
-                        for i in range(len(one_agent_next_obs)):
-                            # if done_tensor[i] == 1:
-                            #     continue
-                            # model.memory.push(one_agent_obs[i], ac_tensor[i, :], one_agent_next_obs[i], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
-                            #                   cur_actor_hiddens[i, :], next_actor_hiddens[i,:])
-                            model.memory.push(one_agent_obs[i][0], one_agent_obs[i][1], one_agent_obs[i][2], ac_tensor[i, :], one_agent_next_obs[i][0], one_agent_next_obs[i][1], one_agent_next_obs[i][2], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
-                                              cur_actor_hiddens[i, :], next_actor_hiddens[i,:], cur_mask_tensor[i, :, :], nxt_mask_tensor[i, :, :])
-                        # ------- end of push to memory one by one ----------
+                            for i in range(len(one_agent_next_obs)):
+                                # if done_tensor[i] == 1:
+                                #     continue
+                                # model.memory.push(one_agent_obs[i], ac_tensor[i, :], one_agent_next_obs[i], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
+                                #                   cur_actor_hiddens[i, :], next_actor_hiddens[i,:])
+                                model.memory.push(one_agent_obs[i][0], one_agent_obs[i][1], one_agent_obs[i][2], ac_tensor[i, :], one_agent_next_obs[i][0], one_agent_next_obs[i][1], one_agent_next_obs[i][2], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
+                                                  cur_actor_hiddens[i, :], next_actor_hiddens[i,:], cur_mask_tensor[i, :, :], nxt_mask_tensor[i, :, :])
+                            # ------- end of push to memory one by one ----------
 
                 # accum_reward = accum_reward + reward_aft_action[0]  # we just take the first agent's reward, because we are using a joint reward, so all agents obtain the same reward.
                 if full_observable_critic_flag:
@@ -631,7 +636,7 @@ def main(args):
                     accum_reward = accum_reward + sum(reward_aft_action)
 
                 step_update_time_start = time.time()
-                c_loss, a_loss, single_eps_critic_cal_record = model.update_myown(episode, total_step, args.update_step, single_eps_critic_cal_record, transfer_learning, use_allNeigh_wRadar, use_selfATT_with_radar, use_nearestN_neigh_wRadar, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
+                c_loss, a_loss, single_eps_critic_cal_record = model.update_myown(episode, total_step, args.update_step, single_eps_critic_cal_record, transfer_learning, use_allNeigh_wRadar, use_selfATT_with_radar, use_nearestN_neigh_wRadar, shared_one_actor_central_critic, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
                 # c_loss, a_loss, single_eps_critic_cal_record, current_row = model.update_myown_v2(episode, total_step, UPDATE_EVERY, single_eps_critic_cal_record, transfer_learning, own_obs_only, use_allNeigh_wRadar, use_selfATT_with_radar, step, experience_replay_record, action, current_row, excel_file_path, writer, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
                 # c_loss, a_loss, single_eps_critic_cal_record, current_row = model.update_myown_v3(episode, total_step, UPDATE_EVERY, single_eps_critic_cal_record, transfer_learning, own_obs_only, use_allNeigh_wRadar, use_selfATT_with_radar, step, experience_replay_record, action, current_row, excel_file_path, writer, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
                 update_time_used = (time.time() - step_update_time_start)*1000
@@ -1223,7 +1228,7 @@ if __name__ == '__main__':
     parser.add_argument('--scenario', default="simple_spread", type=str)
     parser.add_argument('--max_episodes', default=20000, type=int)  # run for a total of 50000 episodes
     parser.add_argument('--algo', default="maddpg", type=str, help="commnet/bicnet/maddpg")
-    parser.add_argument('--mode', default="eval", type=str, help="train/eval")
+    parser.add_argument('--mode', default="train", type=str, help="train/eval")
     parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=120, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode

@@ -521,8 +521,8 @@ def animate(frame_num, ax, env, trajectory_eachPlay):
     # plt.axhline(y=env.bound[3], c="green")
     plt.xlabel("X axis")
     plt.ylabel("Y axis")
-    # aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
-    aircraft_svg_path = r'D:\MARL_2nd_paper\MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3\Aircraft.svg'  # Replace with your SVG path
+    aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
+    # aircraft_svg_path = r'D:\MARL_2nd_paper\MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3\Aircraft.svg'  # Replace with your SVG path
     plane_img = load_svg_image(aircraft_svg_path)
 
     # draw occupied_poly
@@ -739,8 +739,8 @@ def save_gif(env, trajectory_eachPlay, pre_fix, episode_to_check, episode):
 
 
 def view_static_traj(env, trajectory_eachPlay, save_path=None, max_time_step=None):
-    # aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
-    aircraft_svg_path = r'D:\MARL_2nd_paper\MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3\Aircraft.svg'  # Replace with your SVG path
+    aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
+    # aircraft_svg_path = r'D:\MARL_2nd_paper\MADDPG_ownENV_randomOD_radar_N_model_use_tdCPA_forV3\Aircraft.svg'  # Replace with your SVG path
     plane_img = load_svg_image(aircraft_svg_path)
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
     matplotlib.use('TkAgg')

@@ -207,7 +207,7 @@ class env_simulator:
                 # top left
                 # plt.plot(centre_coord[0], centre_coord[1], marker='.', color='g', markersize=2)
 
-    def reset_world(self, total_agentNum, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, show):  # set initialize position and observation for all agents
+    def reset_world(self, total_agentNum, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, shared_one_actor_central_critic, show):  # set initialize position and observation for all agents
         self.global_time = 0.0
         self.time_step = 0.5
         # reset OU_noise as well
