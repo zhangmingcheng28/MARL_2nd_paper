@@ -8,7 +8,7 @@
 """
 import torch as T
 import torch.nn as nn
-from Utilities_own_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import *
+from Utilities_own_randomOD_radar_sur_drones_N_Model_archieved import *
 import torch.nn.functional as F
 import torch.optim as optim
 import torch
@@ -142,28 +142,6 @@ class ActorNetwork(nn.Module):
         return action_out
 
 
-class ActorNetwork_nearestN_neigh_wRadar(nn.Module):
-    def __init__(self, actor_dim, n_actions):  # actor_obs consists of three parts 0 = own, 1 = own grid, 2 = surrounding drones
-        super(ActorNetwork_nearestN_neigh_wRadar, self).__init__()
-
-        self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
-        self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.ReLU())
-        self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.ReLU())
-        self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 256), nn.ReLU())
-
-        self.act_out = nn.Sequential(nn.Linear(256, n_actions), nn.Tanh())
-
-    def forward(self, cur_state):
-        own_obs = self.own_fc(cur_state[0])
-        own_nei = self.own_full_nei(cur_state[1])
-        own_radar = self.own_grid(cur_state[2])
-        merge_obs_grid = torch.cat((own_obs, own_nei, own_radar), dim=1)
-        merge_feature = self.merge_feature(merge_obs_grid)
-        out_action = self.act_out(merge_feature)
-
-        return out_action
-
-
 class ActorNetwork_TwoPortion(nn.Module):
     def __init__(self, actor_dim, n_actions):  # actor_obs consists of three parts 0 = own, 1 = own grid, 2 = surrounding drones
         super(ActorNetwork_TwoPortion, self).__init__()
@@ -180,6 +158,25 @@ class ActorNetwork_TwoPortion(nn.Module):
         # self.act_out = nn.Sequential(nn.Linear(128, n_actions))
         # self.act_out = nn.Sequential(nn.Linear(256, n_actions), nn.Tanh())
 
+        # ignore radar
+        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 128), nn.ReLU())
+        # self.hidden = nn.Sequential(nn.Linear(128, 128), nn.ReLU())
+        # # self.hidden = nn.Sequential(nn.Linear(128, 128), nn.ReLU(),
+        # #                             nn.Linear(128, 128), nn.ReLU(),
+        # #                             nn.Linear(128,128), nn.ReLU())
+        # self.act_out = nn.Sequential(nn.Linear(128, n_actions), nn.Tanh())
+        # # self.act_out = nn.Sequential(nn.Linear(128, n_actions))
+
+        # # ignore radar but single out relative distance, actually same NN as with radar.
+        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
+        # # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 128), nn.ReLU())
+        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.ReLU())
+        # # self.own_grid = nn.Sequential(nn.Linear(actor_dim[1], 128), nn.ReLU())
+        # self.merge_feature = nn.Sequential(nn.Linear(64+64, 128), nn.ReLU())
+        # # self.merge_feature_l2 = nn.Sequential(nn.Linear(64 + 64, 128), nn.ReLU())
+        # # self.merge_feature = nn.Sequential(nn.Linear(128+128, 256), nn.ReLU())
+        # self.act_out = nn.Sequential(nn.Linear(128, n_actions), nn.Tanh())
+        # # self.act_out = nn.Sequential(nn.Linear(256, n_actions), nn.Tanh())
 
     def forward(self, cur_state):
         own_obs = self.own_fc(cur_state[0])
@@ -201,124 +198,6 @@ class ActorNetwork_TwoPortion(nn.Module):
         # out_action = self.act_out(merge_feature)
 
         return out_action
-
-
-class pretrained_mask_head(nn.Module):
-    def __init__(self, num_segments=10):
-        super(pretrained_mask_head, self).__init__()
-        self.fc1 = nn.Linear(1 + num_segments, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 1)
-
-    def forward(self, x, mask_encoding):
-        original_input = x
-        x = torch.cat([x, mask_encoding], dim=0)  # Combine main input and mask encoding
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        output = torch.tanh(self.fc3(x))  # Ensure output stays within [-1, 1]
-        return output
-
-
-class pretrained_mask_all_mask_head(nn.Module):
-    def __init__(self, num_segments=10):
-        super(pretrained_mask_all_mask_head, self).__init__()
-        self.fc1 = nn.Linear(1 + num_segments, 128)
-        self.fc2 = nn.Linear(128, 128)
-        # self.fc3 = nn.Linear(128, 1)
-        self.fc3 = nn.Sequential(nn.Linear(128, 1), nn.Tanh())
-        # self.fc3 = nn.Sequential(nn.Linear(128, 1))
-
-    def forward(self, x, mask_encoding):
-        x = torch.cat([x, mask_encoding], dim=1)  # Combine main input and mask encoding
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        # output = torch.tanh(self.fc3(x))  # Ensure output stays within [-1, 1]
-        output = self.fc3(x)  # Ensure output stays within [-1, 1]
-        return output
-
-
-class pretrained_mask_not_inside_mask(nn.Module):
-    def __init__(self, num_segments=10):
-        super(pretrained_mask_not_inside_mask, self).__init__()
-        self.fc1 = nn.Linear(1 + num_segments, 128)
-        self.fc2 = nn.Linear(128, 128)
-        # self.fc3 = nn.Linear(128, 1)
-        self.fc3 = nn.Sequential(nn.Linear(128, 1), nn.Tanh())
-        # self.fc3 = nn.Sequential(nn.Linear(128, 1))
-
-    def forward(self, x, mask_encoding):
-        x = torch.cat([x, mask_encoding], dim=1)  # Combine main input and mask encoding
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        # output = torch.tanh(self.fc3(x))  # Ensure output stays within [-1, 1]
-        output = self.fc3(x)  # Ensure output stays within [-1, 1]
-        return output
-
-
-class pretrained_mask_inside_mask(nn.Module):
-    def __init__(self, num_segments=10):
-        super(pretrained_mask_inside_mask, self).__init__()
-        self.fc1 = nn.Linear(1 + num_segments, 128)
-        self.fc2 = nn.Linear(128, 128)
-        # self.fc3 = nn.Linear(128, 1)
-        self.fc3 = nn.Sequential(nn.Linear(128, 1), nn.Tanh())
-        # self.fc3 = nn.Sequential(nn.Linear(128, 1))
-
-    def forward(self, x, mask_encoding):
-        x = torch.cat([x, mask_encoding], dim=1)  # Combine main input and mask encoding
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        # output = torch.tanh(self.fc3(x))  # Ensure output stays within [-1, 1]
-        output = self.fc3(x)  # Ensure output stays within [-1, 1]
-        return output
-
-
-class LLM_actor_pretrained_head(nn.Module):
-    def __init__(self, actor_dim, n_actions, pretrained_mask_not_inside_mask,
-                 pretrained_mask_all_mask_head, pretrained_mask_inside_mask):  # actor_obs consists of three parts 0 = own, 1 = own grid, 2 = surrounding drones
-        super(LLM_actor_pretrained_head, self).__init__()
-        self.pretrained_not_inside = pretrained_mask_not_inside_mask
-        self.pretrained_all_mask = pretrained_mask_all_mask_head
-        self.pretrained_inside = pretrained_mask_inside_mask
-
-        # Freeze the parameters of all pre-trained mask head
-        for param in self.pretrained_not_inside.parameters():
-            param.requires_grad = False
-        for param in self.pretrained_all_mask.parameters():
-            param.requires_grad = False
-        for param in self.pretrained_inside.parameters():
-            param.requires_grad = False
-
-        self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
-        self.own_grid = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.ReLU())
-        self.merge_feature = nn.Sequential(nn.Linear(64+64, 128), nn.ReLU())
-        self.act_out = nn.Sequential(nn.Linear(128, n_actions), nn.Tanh())
-
-    def forward(self, cur_state):
-        own_obs = self.own_fc(cur_state[0])
-        own_grid = self.own_grid(cur_state[1])
-        merge_obs_grid = torch.cat((own_obs, own_grid), dim=1)
-        merge_feature = self.merge_feature(merge_obs_grid)
-        NN_selected_out_action = self.act_out(merge_feature)
-        NN_selected_out_action = NN_selected_out_action.clone()
-        # --------- link to pretrained head -----
-        # decide which head to use based on mask
-        if len(cur_state[2].shape) == 3:  # meaning batch information is included
-            current_mask_a = cur_state[2][:, 0, :]
-            current_mask_b = cur_state[2][:, 0, :]
-        else:
-            current_mask_a = cur_state[2][0].unsqueeze(0)  # shape is (1, 10) (batch_size, mask_length)
-            current_mask_b = cur_state[2][1].unsqueeze(0)
-        # mask_condition_a = obtain_conditions(current_mask_a, NN_selected_out_action[:, 0].unsqueeze(1))
-        outside_masked_segments_a, all_segments_masked_a, inside_masked_segments_a = obtain_conditions(current_mask_a, NN_selected_out_action[:, 0].unsqueeze(1))
-        # mask_condition_b = obtain_conditions(current_mask_b, NN_selected_out_action[:, 1].unsqueeze(1))
-        outside_masked_segments_b, all_segments_masked_b, inside_masked_segments_b = obtain_conditions(current_mask_b, NN_selected_out_action[:, 1].unsqueeze(1))
-        # decide which head to use based on the mask condition
-        masked_out_a = head_selection(NN_selected_out_action[:, 0].unsqueeze(1), self.pretrained_inside, self.pretrained_all_mask, self.pretrained_not_inside, outside_masked_segments_a, all_segments_masked_a, inside_masked_segments_a, current_mask_a)
-        masked_out_b = head_selection(NN_selected_out_action[:, 1].unsqueeze(1), self.pretrained_inside, self.pretrained_all_mask, self.pretrained_not_inside, outside_masked_segments_b, all_segments_masked_b, inside_masked_segments_b, current_mask_b)
-        # ------ end of linkage ---------
-        final_output = torch.cat([masked_out_a, masked_out_b], dim=1)
-        return final_output
 
 
 class ActorNetwork_ATT(nn.Module):
@@ -398,25 +277,15 @@ class ActorNetwork_allnei_wRadar(nn.Module):
         self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.ReLU())
         self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.ReLU())
         self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 256), nn.ReLU())
-        # self.merge_feature = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
         self.act_out = nn.Sequential(nn.Linear(256, 256), nn.ReLU(),
                                      nn.Linear(256, n_actions), nn.Tanh())
-        # use leaky()
         # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.LeakyReLU(0.01))
         # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.LeakyReLU(0.01))
         # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.LeakyReLU(0.01))
         # self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 256), nn.LeakyReLU(0.01))
-        # # self.merge_feature = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
         # self.act_out = nn.Sequential(nn.Linear(256, 256), nn.LeakyReLU(0.01),
         #                              nn.Linear(256, n_actions), nn.Tanh())
-        # wider actor NN
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 128), nn.LeakyReLU(0.01))
-        # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 128), nn.LeakyReLU(0.01))
-        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 128), nn.LeakyReLU(0.01))
-        # self.merge_feature = nn.Sequential(nn.Linear(128*3, 512), nn.LeakyReLU(0.01))
-        # # self.merge_feature = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
-        #                              nn.Linear(256, n_actions), nn.Tanh())
+
         # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
         # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 256), nn.ReLU())
         # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 128), nn.ReLU())
@@ -454,91 +323,7 @@ class ActorNetwork_allnei_wRadar(nn.Module):
         own_obs = self.own_fc(cur_state[0])
         own_nei = self.own_full_nei(cur_state[1])
         own_radar = self.own_grid(cur_state[2])
-        if len(own_obs.shape) == 2:
-            merge_obs_grid = torch.cat((own_obs, own_nei, own_radar), dim=1)  # when we have seq_length, we need dim=2
-        else:
-            merge_obs_grid = torch.cat((own_obs, own_nei, own_radar), dim=2)
-        # merge_obs_grid = torch.cat((own_obs, own_radar), dim=1)
-        merge_feature = self.merge_feature(merge_obs_grid)
-        out_action = self.act_out(merge_feature)
-
-        # to compare
-        # own_obs = self.own_fc(cur_state[0])
-        # # own_grid = self.own_grid(cur_state[2])
-        # # merge_obs_grid = torch.cat((own_obs, own_grid), dim=1)
-        # merge_feature = self.merge_feature(own_obs)
-        # out_action = self.act_out(merge_feature)
-        # end of to compare
-        return out_action
-
-
-class ActorNetwork_allnei_wRadar_central_critic(nn.Module):
-    def __init__(self, actor_dim, n_actions):
-        super(ActorNetwork_allnei_wRadar_central_critic, self).__init__()
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
-        # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.ReLU())
-        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.ReLU())
-        # self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 256), nn.ReLU())
-        # # self.merge_feature = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(256, 256), nn.ReLU(),
-        #                              nn.Linear(256, n_actions), nn.Tanh())
-        # use leaky()
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.LeakyReLU(0.01))
-        # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.LeakyReLU(0.01))
-        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.LeakyReLU(0.01))
-        # self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 256), nn.LeakyReLU(0.01))
-        # # self.merge_feature = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(256, 256), nn.LeakyReLU(0.01),
-        #                              nn.Linear(256, n_actions), nn.Tanh())
-        # wider actor NN
-        self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 128), nn.LeakyReLU(0.01))
-        self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 128), nn.LeakyReLU(0.01))
-        self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 128), nn.LeakyReLU(0.01))
-        self.merge_feature = nn.Sequential(nn.Linear(128*3, 512), nn.LeakyReLU(0.01))
-        # self.merge_feature = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
-        self.act_out = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
-                                     nn.Linear(256, n_actions), nn.Tanh())
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
-        # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 256), nn.ReLU())
-        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 128), nn.ReLU())
-        # self.merge_feature = nn.Sequential(nn.Linear(64+256+128, 1024), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(1024, 512), nn.ReLU(),
-        #                              nn.Linear(512, n_actions), nn.Tanh())
-
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
-        # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 64), nn.ReLU())
-        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.ReLU())
-        # self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 512), nn.ReLU(),
-        #                                    nn.Linear(512, 512), nn.ReLU(),
-        #                                    nn.Linear(512, 512), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(512, 512), nn.ReLU(),
-        #                              nn.Linear(512, n_actions), nn.Tanh())
-
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 256), nn.ReLU())
-        # self.own_full_nei = nn.Sequential(nn.Linear(actor_dim[1], 256), nn.ReLU())
-        # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 256), nn.ReLU())
-        # self.merge_feature = nn.Sequential(nn.Linear(256+256+256, 1024), nn.ReLU())
-        #                                    # nn.Linear(512, 512), nn.ReLU(),
-        #                                    # nn.Linear(512, 512), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(1024, 1024), nn.ReLU(),
-        #                              nn.Linear(512, n_actions), nn.Tanh())
-
-        # --to compare
-        # self.own_fc = nn.Sequential(nn.Linear(actor_dim[0], 64), nn.ReLU())
-        # # self.own_grid = nn.Sequential(nn.Linear(actor_dim[2], 64), nn.ReLU())
-        # # self.merge_feature = nn.Sequential(nn.Linear(64+64, 128), nn.ReLU())
-        # self.merge_feature = nn.Sequential(nn.Linear(64, 128), nn.ReLU())
-        # self.act_out = nn.Sequential(nn.Linear(128, n_actions), nn.Tanh())
-        #-- end of to compare
-
-    def forward(self, cur_state):
-        own_obs = self.own_fc(cur_state[0])
-        own_nei = self.own_full_nei(cur_state[1])
-        own_radar = self.own_grid(cur_state[2])
-        if len(own_obs.shape) == 2:  # no batch information
-            merge_obs_grid = torch.cat((own_obs, own_nei, own_radar), dim=1)
-        else:
-            merge_obs_grid = torch.cat((own_obs, own_nei, own_radar), dim=2)  # when we have seq_length, we need dim=2
+        merge_obs_grid = torch.cat((own_obs, own_nei, own_radar), dim=1)
         # merge_obs_grid = torch.cat((own_obs, own_radar), dim=1)
         merge_feature = self.merge_feature(merge_obs_grid)
         out_action = self.act_out(merge_feature)
@@ -954,73 +739,23 @@ class critic_single_TwoPortion(nn.Module):
         return q
 
 
-class LLM_critic_pretrained_head(nn.Module):
-    def __init__(self, critic_obs, n_agents, n_actions, single_history, hidden_state_size):
-        super(LLM_critic_pretrained_head, self).__init__()
-        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
-        self.SA_grid = nn.Sequential(nn.Linear(critic_obs[1], 64), nn.ReLU())
-        self.merge_fc_grid = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
-        self.out_feature_q = nn.Sequential(nn.Linear(256, 1))
-
-    def forward(self, single_state, single_action):
-        obsWaction = torch.cat((single_state[0], single_action), dim=1)
-        own_obsWaction = self.SA_fc(obsWaction)
-        own_grid = self.SA_grid(single_state[1])
-        merge_obs_grid = torch.cat((own_obsWaction, own_grid), dim=1)
-        merge_feature = self.merge_fc_grid(merge_obs_grid)
-        q = self.out_feature_q(merge_feature)
-        return q
-
-
-
-class critic_single_nearestN_neigh_wRadar(nn.Module):
-    def __init__(self, critic_obs, n_agents, n_actions, single_history, hidden_state_size):
-        super(critic_single_nearestN_neigh_wRadar, self).__init__()
-
-        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
-        self.nearestN_nei = nn.Sequential(nn.Linear(critic_obs[1], 64), nn.ReLU())
-        self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 64), nn.ReLU())
-        self.merge_feature = nn.Sequential(nn.Linear(64+64+64, 256), nn.ReLU())
-        self.out_feature_q = nn.Sequential(nn.Linear(256, 256), nn.ReLU(), nn.Linear(256, 1))
-
-    def forward(self, single_state, single_action):
-        obsWaction = torch.cat((single_state[0], single_action), dim=1)
-        own_obsWaction = self.SA_fc(obsWaction)
-        own_full_neigh = self.nearestN_nei(single_state[1])
-        own_radar = self.S_radar(single_state[2])
-        merge_obs_grid = torch.cat((own_obsWaction, own_full_neigh, own_radar), dim=1)
-        merge_feature = self.merge_feature(merge_obs_grid)
-        q = self.out_feature_q(merge_feature)
-        return q
-
-
 class critic_single_TwoPortion_wRadar(nn.Module):
     def __init__(self, critic_obs, n_agents, n_actions, single_history, hidden_state_size):
         super(critic_single_TwoPortion_wRadar, self).__init__()
-        # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
-        # self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.ReLU())
-        # self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.ReLU())
-        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.ReLU())
-        # # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
-        # self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.ReLU(),
-        #                                    nn.Linear(256, 1))
-
-        # use leaky()
-        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.LeakyReLU(0.01))
-        self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
-        self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
-        self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.LeakyReLU(0.01))
+        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
+        self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.ReLU())
+        self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.ReLU())
+        self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.ReLU())
         # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
-        self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
+        self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.ReLU(),
                                            nn.Linear(256, 1))
-
-        # multi-heading att?
-        # self.own_fc = nn.Sequential(nn.Linear(critic_obs[0], 128), nn.LeakyReLU(0.01))
-        # self.own_grid = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
-        # self.neigh_fc = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
-        # self.out_feature_q = nn.Sequential(nn.Linear(128 * 3+2, 1))
-        # self.multihead_attention = nn.MultiheadAttention(embed_dim=128*3+2, num_heads=2, batch_first=True)
-        #
+        # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.LeakyReLU(0.01))
+        # self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
+        # self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
+        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.LeakyReLU(0.01))
+        # # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
+        # self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
+        #                                    nn.Linear(256, 1))
 
         # ----- to compare
         # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
@@ -1040,18 +775,6 @@ class critic_single_TwoPortion_wRadar(nn.Module):
         merge_feature = self.merge_fc_grid(merge_obs_grid)
         q = self.out_feature_q(merge_feature)
 
-        # multi-head att?
-        # own_obs = self.own_fc(single_state[0])
-        # own_grid = self.own_grid(single_state[1])
-        # neigh_obs = self.neigh_fc(single_state[2])
-        # concatenated_features = torch.cat((own_obs, own_grid, neigh_obs, single_action), dim=1)
-        # concatenated_features = concatenated_features.unsqueeze(1)
-        # attention_output, _ = self.multihead_attention(concatenated_features, concatenated_features,
-        #                                                concatenated_features)
-        # attention_output = attention_output.squeeze(1)  # Remove sequence dimension
-        #
-        # q = self.out_feature_q(attention_output)
-
         # --- to compare
         # obsWaction = torch.cat((single_state[0], single_action), dim=1)
         # own_obsWaction = self.SA_fc(obsWaction)
@@ -1062,74 +785,6 @@ class critic_single_TwoPortion_wRadar(nn.Module):
         # --- end of to compare
         return q
 
-
-class critic_single_TwoPortion_wRadar_central_critic(nn.Module):
-    def __init__(self, critic_obs, n_agents, n_actions, single_history, hidden_state_size):
-        super(critic_single_TwoPortion_wRadar_central_critic, self).__init__()
-        # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
-        # self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.ReLU())
-        # self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.ReLU())
-        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.ReLU())
-        # # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
-        # self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.ReLU(),
-        #                                    nn.Linear(256, 1))
-
-        # use leaky()
-        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.LeakyReLU(0.01))
-        self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
-        self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
-        self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.LeakyReLU(0.01))
-        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
-        self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
-                                           nn.Linear(256, 1))
-
-        # multi-heading att?
-        # self.own_fc = nn.Sequential(nn.Linear(critic_obs[0], 128), nn.LeakyReLU(0.01))
-        # self.own_grid = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
-        # self.neigh_fc = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
-        # self.out_feature_q = nn.Sequential(nn.Linear(128 * 3+2, 1))
-        # self.multihead_attention = nn.MultiheadAttention(embed_dim=128*3+2, num_heads=2, batch_first=True)
-        #
-
-        # ----- to compare
-        # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
-        # self.SA_grid = nn.Sequential(nn.Linear(critic_obs[2], 64), nn.ReLU())
-        # # self.merge_fc_grid = nn.Sequential(nn.Linear(64+64, 256), nn.ReLU())
-        # self.merge_fc_grid = nn.Sequential(nn.Linear(64, 256), nn.ReLU())
-        # self.out_feature_q = nn.Sequential(nn.Linear(256, 1))
-        # ---- end of to compare
-
-    def forward(self, single_state, single_action):
-        obsWaction = torch.cat((single_state[0], single_action), dim=2)
-        own_obsWaction = self.SA_fc(obsWaction)
-        own_full_neigh = self.S_all_nei(single_state[1])
-        own_radar = self.S_radar(single_state[2])
-        merge_obs_grid = torch.cat((own_obsWaction, own_full_neigh, own_radar), dim=2)
-        # merge_obs_grid = torch.cat((own_obsWaction, own_radar), dim=1)
-        merge_feature = self.merge_fc_grid(merge_obs_grid)
-        q = self.out_feature_q(merge_feature)
-
-        # multi-head att?
-        # own_obs = self.own_fc(single_state[0])
-        # own_grid = self.own_grid(single_state[1])
-        # neigh_obs = self.neigh_fc(single_state[2])
-        # concatenated_features = torch.cat((own_obs, own_grid, neigh_obs, single_action), dim=1)
-        # concatenated_features = concatenated_features.unsqueeze(1)
-        # attention_output, _ = self.multihead_attention(concatenated_features, concatenated_features,
-        #                                                concatenated_features)
-        # attention_output = attention_output.squeeze(1)  # Remove sequence dimension
-        #
-        # q = self.out_feature_q(attention_output)
-
-        # --- to compare
-        # obsWaction = torch.cat((single_state[0], single_action), dim=1)
-        # own_obsWaction = self.SA_fc(obsWaction)
-        # # own_grid = self.SA_grid(single_state[2])
-        # # merge_obs_grid = torch.cat((own_obsWaction, own_grid), dim=1)
-        # merge_feature = self.merge_fc_grid(own_obsWaction)
-        # q = self.out_feature_q(merge_feature)
-        # --- end of to compare
-        return q
 
 class critic_single_obs_only(nn.Module):
     def __init__(self, critic_obs, n_agents, n_actions, single_history, hidden_state_size):

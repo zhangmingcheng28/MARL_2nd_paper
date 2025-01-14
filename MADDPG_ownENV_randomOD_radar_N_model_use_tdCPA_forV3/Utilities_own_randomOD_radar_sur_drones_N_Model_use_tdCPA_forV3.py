@@ -36,6 +36,52 @@ import random
 import math
 
 
+def compute_acceleration(v_x, v_y, v_x_des, v_y_des, max_acc=8, dt=0.5):
+    a_x = (v_x_des - v_x) / dt
+    a_y = (v_y_des - v_y) / dt
+
+    # Clip the acceleration
+    a_total = (a_x**2 + a_y**2)**0.5
+    if a_total > max_acc:
+        scale = max_acc / a_total
+        a_x *= scale
+        a_y *= scale
+
+    return a_x, a_y
+
+
+def get_target_point(x, y, reference_path, lookahead_distance=5.0, radius=2.5):
+    # Drone's current position as a Point
+    drone_position = Point(x, y)
+
+    # Closest point on the reference path
+    closest_point = reference_path.interpolate(reference_path.project(drone_position))
+
+    # Project the target point ahead along the path
+    target_distance = reference_path.project(drone_position) + lookahead_distance
+    target_distance = min(target_distance, reference_path.length)  # Clamp within path length
+    target_point = reference_path.interpolate(target_distance)
+
+    # If the drone is within its radius of the target point, move farther along
+    if drone_position.distance(target_point) <= radius:
+        target_distance += lookahead_distance
+        target_distance = min(target_distance, reference_path.length)  # Clamp within path length
+        target_point = reference_path.interpolate(target_distance)
+
+    return target_point.x, target_point.y
+
+
+def desired_velocity(x, y, target_x, target_y, max_speed=5):
+    """Compute the desired velocity towards the target point."""
+    direction = np.array([target_x - x, target_y - y])
+    norm = np.linalg.norm(direction)
+    if norm > 0:
+        direction = direction / norm
+    v_x_des = direction[0] * max_speed
+    v_y_des = direction[1] * max_speed
+    return v_x_des, v_y_des
+
+
 def head_selection(input_val, pretrained_inside, pretrained_all_mask, pretrained_not_inside, outside_masked_segments, all_segments_masked, inside_masked_segments, current_mask):
     if outside_masked_segments.any():
         # if outside_masked_segments.sum().item() <10 and outside_masked_segments.sum().item() >1:

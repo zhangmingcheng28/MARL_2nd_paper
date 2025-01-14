@@ -13,11 +13,9 @@ import time
 import matplotlib.animation as animation
 import pickle
 import wandb
-from parameters_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import initialize_parameters
-from maddpg_agent_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import MADDPG
-from utils_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import *
-from grid_env_generation_newframe_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import env_generation
-from env_simulator_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import env_simulator
+from parameters_randomOD_radar_sur_drones_N_Model_archieved import initialize_parameters
+from maddpg_agent_randomOD_radar_sur_drones_N_Model_archieved import MADDPG
+from utils_randomOD_radar_sur_drones_N_Model_archieved import *
 from copy import deepcopy
 import torch
 import matplotlib.pyplot as plt
@@ -27,7 +25,7 @@ from shapely.strtree import STRtree
 from matplotlib.markers import MarkerStyle
 import math
 from matplotlib.transforms import Affine2D
-from Utilities_own_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import *
+from Utilities_own_randomOD_radar_sur_drones_N_Model_archieved import *
 from collections import deque
 import csv
 
@@ -47,9 +45,6 @@ else:
 
 
 def main(args):
-    # Load the pickle file
-    # with open(r'D:\MADDPG_2nd_jp\190824_15_17_16\interval_record_eps\chapter_5_5_3cL_randomOD_16000\_4AC_cur_eva_fixedAR_OD.pickle', 'rb') as handle:
-    #     to_see = pickle.load(handle)
     if args.mode == "train":
         today = datetime.date.today()
         current_date = today.strftime("%d%m%y")
@@ -79,9 +74,6 @@ def main(args):
     # get_evaluation_status = True  # have figure output
     get_evaluation_status = False  # no figure output, mainly obtain collision rate
 
-    # evaluation_by_fixed_ar = True  # condition to when evaluation using fixed AR.
-    evaluation_by_fixed_ar = False
-
     # simply_view_evaluation = True  # don't save gif
     simply_view_evaluation = False  # save gif
 
@@ -103,24 +95,6 @@ def main(args):
     use_allNeigh_wRadar = True
     # use_allNeigh_wRadar = False
 
-    # use_nearestN_neigh_wRadar = True
-    use_nearestN_neigh_wRadar = False
-    N_neigh = 2
-
-    # include_other_AC = True  # used for change skin during training, whether include the surrounding ACs for radar
-    include_other_AC = False
-
-    save_cur_eva_OD = True
-    # save_cur_eva_OD = False
-
-    # ---- new flag --- 2024
-    shared_one_actor_one_critic = True  # not used
-    # shared_one_actor_one_critic = False
-
-    # shared_one_actor_central_critic = True
-    shared_one_actor_central_critic = False
-    # ---- end of new flag ---
-
     if use_allNeigh_wRadar:
         # own_obs_only = True
         own_obs_only = False
@@ -141,24 +115,12 @@ def main(args):
         )
 
     # -------------- create my own environment -----------------
-    # set boundary
-    xlow = 455
-    xhigh = 680
-    ylow = 255
-    yhigh = 385
-    bound = [xlow, xhigh, ylow, yhigh]
-    # generate static env from shape file
-    shapePath = 'D:\lakesideMap\lakeSide.shp'
-    staticEnv = env_generation(shapePath, bound)
-    env = env_simulator(staticEnv[0], staticEnv[1], staticEnv[2], bound, staticEnv[3])
-    max_xy = staticEnv[-1]
+    eps_start, eps_end, eps_period, eps, env, \
+    agent_grid_obs, BUFFER_SIZE, BATCH_SIZE, GAMMA, TAU, UPDATE_EVERY, seed_used, max_xy = initialize_parameters()
     # total_agentNum = len(pd.read_excel(env.agentConfig))
     # total_agentNum = 3
-    # total_agentNum = 7
-    # total_agentNum = 6
-    total_agentNum = 8
     # total_agentNum = 5
-    # total_agentNum = 8
+    total_agentNum = 8
     # total_agentNum = 1
     # max_nei_num = 5
     # create world
@@ -189,8 +151,7 @@ def main(args):
             # actor_dim = [7, (total_agentNum - 1) * 6, 36, 6]
             # actor_dim = [9, (total_agentNum - 1) * 8, 36, 6]
             # actor_dim = [9, (total_agentNum - 1) * 8, 18, 6]
-            actor_dim = [7, (total_agentNum - 1) * 5, 18, 6]  # original
-
+            actor_dim = [7, (total_agentNum - 1) * 5, 18, 6]
             # actor_dim = [9, (total_agentNum - 1) * 5, 18, 6]
             # actor_dim = [6, 1 * 5, 36, 6]
             # actor_dim = [6, 2 * 5, 36, 6]
@@ -198,14 +159,10 @@ def main(args):
             # critic_dim = [7, (total_agentNum - 1) * 6, 36, 6]
             # critic_dim = [9, (total_agentNum - 1) * 8, 36, 6]
             # critic_dim = [9, (total_agentNum - 1) * 8, 18, 6]
-            critic_dim = [7, (total_agentNum - 1) * 5, 18, 6]  # original
-
+            critic_dim = [7, (total_agentNum - 1) * 5, 18, 6]
             # critic_dim = [9, (total_agentNum - 1) * 5, 18, 6]
             # critic_dim = [6, 1 * 5, 36, 6]
             # critic_dim = [6, 2 * 5, 36, 6]
-        elif use_nearestN_neigh_wRadar:
-            actor_dim = [7, N_neigh * 5, 18, 6]
-            critic_dim = [7, N_neigh * 5, 18, 6]
         else:
             # actor_dim = [6, 18, 6]  # dim host, maximum dim grid, dim other drones
             # actor_dim = [8, 18, 6]  # dim host, maximum dim grid, dim other drones
@@ -215,8 +172,7 @@ def main(args):
             # actor_dim = [8+(total_agentNum-1)*4, 18, 6]  # dim host, maximum dim grid, dim other drones
             # actor_dim = [6+(total_agentNum-1)*5, 18, 6]  # dim host, maximum dim grid, dim other drones
             # actor_dim = [6+(total_agentNum-1)*4, (total_agentNum-1)*1, 6]  # dim host, maximum dim grid, dim other drones
-            # actor_dim = [6, (total_agentNum-1)*5, 6]  # dim host, maximum dim grid, dim other drones
-            actor_dim = [7, 18, 6]  # dim host, maximum dim grid, dim other drones
+            actor_dim = [6, (total_agentNum-1)*5, 6]  # dim host, maximum dim grid, dim other drones
             # actor_dim = [14, 18, 6]  # dim host, maximum dim grid, dim other drones
             # actor_dim = [11, 18, 6]  # dim host, maximum dim grid, dim other drones
             # actor_dim = [12, 18, 6]  # dim host, maximum dim grid, dim other drones
@@ -229,8 +185,7 @@ def main(args):
             # critic_dim = [8+(total_agentNum-1)*4, 18, 6]  # dim host, maximum dim grid, dim other drones
             # critic_dim = [6+(total_agentNum-1)*5, 18, 6]  # dim host, maximum dim grid, dim other drones
             # critic_dim = [6+(total_agentNum-1)*4, (total_agentNum-1)*1, 6]  # dim host, maximum dim grid, dim other drones
-            # critic_dim = [6, (total_agentNum-1)*5, 6]  # dim host, maximum dim grid, dim other drones
-            critic_dim = [7, 18, 6]  # dim host, maximum dim grid, dim other drones
+            critic_dim = [6, (total_agentNum-1)*5, 6]  # dim host, maximum dim grid, dim other drones
             # critic_dim = [14, 18, 6]
             # critic_dim = [11, 18, 6]
             # critic_dim = [12, 18, 6]
@@ -273,7 +228,7 @@ def main(args):
     # max_spd = 15
     # max_spd = 10
     max_spd = 5
-    env.create_world(total_agentNum, n_actions, args.gamma, args.tau, args.update_step, largest_Nsigma, smallest_Nsigma, ini_Nsigma, max_xy, max_spd, acc_range)
+    env.create_world(total_agentNum, n_actions, GAMMA, TAU, UPDATE_EVERY, largest_Nsigma, smallest_Nsigma, ini_Nsigma, max_xy, max_spd, acc_range)
 
     # --------- my own -----------
     n_agents = len(env.all_agents)
@@ -282,15 +237,14 @@ def main(args):
     torch.manual_seed(args.seed)  # this is the seed
 
     if args.algo == "maddpg":
-        model = MADDPG(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args, criticNet_lr, actorNet_lr, args.gamma, args.tau, full_observable_critic_flag, use_GRU_flag, use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only, env.normalizer, use_nearestN_neigh_wRadar, shared_one_actor_one_critic, shared_one_actor_central_critic, device)
+        model = MADDPG(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args, criticNet_lr, actorNet_lr, GAMMA, TAU, full_observable_critic_flag, use_GRU_flag, use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only, env.normalizer, device)
 
     episode = 0
     current_row = 0
     excel_file_path = '../MADDPG_ownENV_randomOD_radar_one_model_use_tdCPA/experience_replay_data.xlsx'
-    # writer = pd.ExcelWriter(excel_file_path, engine='xlsxwriter')
+    writer = pd.ExcelWriter(excel_file_path, engine='xlsxwriter')
     total_step = 0
     score_history = []
-    goal_reach_history = []
     experience_replay_record = []
     eps_reward_record = []
     eps_check_collision = []
@@ -300,6 +254,7 @@ def main(args):
     # eps_end = 5000  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
     # eps_end = round(args.max_episodes / 2)  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
     # eps_end = 8000  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
+    # eps_end = 10000  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
     eps_end = 10000  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
     # eps_end = 2500  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
     # eps_end = 4500  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
@@ -307,12 +262,9 @@ def main(args):
     # eps_end = 2000  # at eps = eps_end, the eps value drops to lowest value which is 0.03 (this value is fixed)
     noise_start_level = 1
     training_start_time = time.time()
-    entire_evaluation_run_flight_ratio = []
-    evaluation_OD_repeatability = []
+
     # ------------ record episode time ------------- #
     eps_time_record = []
-    # ---------- record episode OD pairs ------------ #
-    eps_OD_record = []
     # ----------- record each collision checking version running time and decision -------#
     collision_count = 0
     one_drone_reach = 0
@@ -330,20 +282,16 @@ def main(args):
     crash_to_building = 0
     crash_to_drone = 0
     crash_due_to_nearest = 0
-    goal_reached = 0
-    goal_reach_history.append(goal_reached)
+    episode_goal_found = [False] * n_agents
     dummy_xy = (None, None)  # this is a dummy tuple of xy, is not useful during normal training, it is only useful when generating reward map
     if args.mode == "eval":
         # args.max_episodes = 10  # only evaluate one episode during evaluation mode.
-        # args.max_episodes = 15  # only evaluate one episode during evaluation mode.
-        args.max_episodes = 1
-        # args.max_episodes = 50
+        # args.max_episodes = 5  # only evaluate one episode during evaluation mode.
+        args.max_episodes = 100
         # args.max_episodes = 1
         # args.max_episodes = 250
         # args.max_episodes = 25
-        # pre_fix = r'D:\MADDPG_2nd_jp\190824_15_17_16\interval_record_eps\chapter_5_5_3cL_randomOD_16000'
-        pre_fix = r'D:\MADDPG_2nd_jp\200524_16_37_05_from_laptop\interval_record_eps'
-        # pre_fix = r'D:\MADDPG_2nd_jp\181224_19_35_29\interval_record_eps\interval_record_eps'
+        pre_fix = r'D:\MADDPG_2nd_jp\080125_19_37_12\interval_record_eps'
         # episode_to_check = str(10000)
         # pre_fix = r'F:\OneDrive_NTU_PhD\OneDrive - Nanyang Technological University\DDPG_2ndJournal\dim_8_transfer_learning'
         episode_to_check = str(20000)
@@ -374,15 +322,16 @@ def main(args):
             print("training start with transfer learning (pre-loaded actor model)")
     # while episode < args.max_episodes:
     steps_before_collide = []
+    all_eps_OD = []
+    # with open('all_eps_OD.pickle', 'rb') as handle:
+    #     one_set_SE_collection = pickle.load(handle)
     while episode < args.max_episodes:  # start of an episode
-        episode_goal_found = [False] * n_agents  # reset at start of each episode. We accumulate its stats at end of one complete step
+
         # ------------ my own env.reset() ------------ #
         episode_start_time = time.time()
         episode += 1
         eps_reset_start_time = time.time()
-
-        cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, evaluation_by_fixed_ar,
-                                                    include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, shared_one_actor_central_critic, show=1)
+        cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, episode, show=0)
         eps_reset_time_used = (time.time()-eps_reset_start_time)*1000
         # print("current episode {} reset time used is {} milliseconds".format(episode, eps_reset_time_used))  # need to + 1 here, or else will misrecord as the previous episode
         step_collision_record = [[] for _ in range(total_agentNum)]  # reset at each episode, so that we can record down collision at each step for each agent.
@@ -392,7 +341,7 @@ def main(args):
         eps_noise = []
         step_time_breakdown = []
         single_eps_critic_cal_record = []
-        flight_ratio_per_eps_all_AC = []
+        
         cur_actor_hiddens = []
         for hidden_dim in actor_hidden_state_list:
             cur_actor_hiddens.append(np.zeros((hidden_dim)))
@@ -404,13 +353,6 @@ def main(args):
 
         trajectory_eachPlay = []
 
-        # --- load this episode OD for each agent ---- #
-        cur_eps_OD = []
-        for agent_idx, agent_obj in env.all_agents.items():
-            cur_eps_OD.append([list(agent_obj.ini_pos), agent_obj.goal[-1]])
-
-        eps_all_ac_eva_OD_eta = {agent_idx: [agent.ar, agent.eta] for agent_idx, agent in
-                                 env.all_agents.items()}
         while True:  # start of a step
             if args.mode == "train":
                 step_start_time = time.time()
@@ -424,9 +366,8 @@ def main(args):
                 gru_history.append(np.array(norm_cur_state[0]))
 
                 step_obtain_action_time_start = time.time()
-
                 # action, step_noise_val = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, gru_history, noisy=False) # noisy is false because we are using stochastic policy
-                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens, cur_agent_masks_record = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, use_nearestN_neigh_wRadar, env.all_agents, shared_one_actor_central_critic, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
+                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
 
                 generate_action_time = (time.time() - step_obtain_action_time_start)*1000
                 # print("current step obtain action time used is {} milliseconds".format(generate_action_time))
@@ -434,7 +375,7 @@ def main(args):
                 # action = model.choose_action(cur_state, episode, noisy=True)
 
                 one_step_transition_start = time.time()
-                next_state, norm_next_state, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record_aft_act = env.step(action, step, acc_max, args, evaluation_by_episode, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh)
+                next_state, norm_next_state, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list = env.step(action, step, acc_max, args, evaluation_by_episode, full_observable_critic_flag)
                 step_transition_time = (time.time() - one_step_transition_start)*1000
                 # print("current step transition time used is {} milliseconds".format(step_transition_time))
 
@@ -442,11 +383,8 @@ def main(args):
                 # reward_aft_action, done_aft_action, check_goal, step_reward_record = env.get_step_reward_5_v3(step, step_reward_record)   # remove reached agent here
 
                 one_step_reward_start = time.time()
-                (reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder,
-                 step_collision_record, bound_building_check) = env.ss_reward_Mar(step, step_reward_record,
-                                                                              step_collision_record, dummy_xy,
-                                                                              full_observable_critic_flag, args,
-                                                                              evaluation_by_episode)   # remove reached agent here
+                # reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder, step_collision_record, bound_building_check = env.ss_reward(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode, own_obs_only)   # remove reached agent here
+                reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder, step_collision_record, bound_building_check = env.ss_reward_Mar(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode)   # remove reached agent here
                 reward_generation_time = (time.time() - one_step_reward_start)*1000
                 # print("current step reward time used is {} milliseconds".format(reward_generation_time))
 
@@ -534,7 +472,7 @@ def main(args):
                 traj_step_list = []
                 for each_agent_idx, each_agent in env.all_agents.items():
                     # traj_step_list.append([each_agent.pos[0], each_agent.pos[1], reward_aft_action[each_agent_idx]])
-                    traj_step_list.append([each_agent.pos[0], each_agent.pos[1], np.array(step_reward_record[each_agent_idx][1]), each_agent.heading, each_agent.probe_line])
+                    traj_step_list.append([each_agent.pos[0], each_agent.pos[1], np.array(step_reward_record[each_agent_idx][1])])
                 trajectory_eachPlay.append(traj_step_list)
                 if len(gru_history) >= gru_history_length:
                     obs = []
@@ -574,8 +512,6 @@ def main(args):
                     ac_tensor = torch.tensor(action, device=device)
                     # ac_tensor = action
                     # ac_tensor = torch.FloatTensor(action).to(device)
-                    nxt_mask_tensor = torch.tensor(np.array(agent_masks_record_aft_act), device=device)
-                    cur_mask_tensor = torch.tensor(np.array(cur_agent_masks_record), device=device)
                     if full_observable_critic_flag:
                         eps_termination = 1.0 if any(done_aft_action) else 0.0
                         done_tensor = torch.tensor(np.array(eps_termination), device=device)
@@ -594,40 +530,35 @@ def main(args):
                         # model.memory.push(obs, ac_tensor, next_obs, rw_tensor, done_tensor, history_tensor, cur_actor_hiddens, next_actor_hiddens)
                         model.memory.push(obs[0], obs[1], obs[2], ac_tensor, next_obs[0], next_obs[1], next_obs[2], rw_tensor, done_tensor, history_tensor, cur_actor_hiddens, next_actor_hiddens)
                     else:
-                        if shared_one_actor_central_critic:
-                            model.memory.push(obs[0], obs[1], obs[2], ac_tensor, next_obs[0], next_obs[1], next_obs[2],
-                                              rw_tensor, done_tensor, history_tensor, cur_actor_hiddens,
-                                              next_actor_hiddens, cur_mask_tensor, nxt_mask_tensor)
-                        else:
-                            # ------- push to memory one by one ----------
-                            # for obs and next_obs
-                            one_agent_obs = []
-                            for i in range(total_agentNum):
-                                one_agent_one_portion = []
-                                for observation_portion in obs:
-                                    if isinstance(observation_portion, list):
-                                        one_agent_one_portion.append(observation_portion[i])
-                                    else:
-                                        one_agent_one_portion.append(observation_portion[i, :])
-                                one_agent_obs.append(one_agent_one_portion)
-                            one_agent_next_obs = []
-                            for i in range(total_agentNum):
-                                one_agent_one_portion = []
-                                for observation_portion in next_obs:
-                                    if isinstance(observation_portion, list):
-                                        one_agent_one_portion.append(observation_portion[i])
-                                    else:
-                                        one_agent_one_portion.append(observation_portion[i, :])
-                                one_agent_next_obs.append(one_agent_one_portion)
+                        # ------- push to memory one by one ----------
+                        # for obs and next_obs
+                        one_agent_obs = []
+                        for i in range(total_agentNum):
+                            one_agent_one_portion = []
+                            for observation_portion in obs:
+                                if isinstance(observation_portion, list):
+                                    one_agent_one_portion.append(observation_portion[i])
+                                else:
+                                    one_agent_one_portion.append(observation_portion[i, :])
+                            one_agent_obs.append(one_agent_one_portion)
+                        one_agent_next_obs = []
+                        for i in range(total_agentNum):
+                            one_agent_one_portion = []
+                            for observation_portion in next_obs:
+                                if isinstance(observation_portion, list):
+                                    one_agent_one_portion.append(observation_portion[i])
+                                else:
+                                    one_agent_one_portion.append(observation_portion[i, :])
+                            one_agent_next_obs.append(one_agent_one_portion)
 
-                            for i in range(len(one_agent_next_obs)):
-                                # if done_tensor[i] == 1:
-                                #     continue
-                                # model.memory.push(one_agent_obs[i], ac_tensor[i, :], one_agent_next_obs[i], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
-                                #                   cur_actor_hiddens[i, :], next_actor_hiddens[i,:])
-                                model.memory.push(one_agent_obs[i][0], one_agent_obs[i][1], one_agent_obs[i][2], ac_tensor[i, :], one_agent_next_obs[i][0], one_agent_next_obs[i][1], one_agent_next_obs[i][2], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
-                                                  cur_actor_hiddens[i, :], next_actor_hiddens[i,:], cur_mask_tensor[i, :, :], nxt_mask_tensor[i, :, :])
-                            # ------- end of push to memory one by one ----------
+                        for i in range(len(one_agent_next_obs)):
+                            # if done_tensor[i] == 1:
+                            #     continue
+                            # model.memory.push(one_agent_obs[i], ac_tensor[i, :], one_agent_next_obs[i], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
+                            #                   cur_actor_hiddens[i, :], next_actor_hiddens[i,:])
+                            model.memory.push(one_agent_obs[i][0], one_agent_obs[i][1], one_agent_obs[i][2], ac_tensor[i, :], one_agent_next_obs[i][0], one_agent_next_obs[i][1], one_agent_next_obs[i][2], rw_tensor[i], done_tensor[i], history_tensor[:,i,:],
+                                              cur_actor_hiddens[i, :], next_actor_hiddens[i,:])
+                        # ------- end of push to memory one by one ----------
 
                 # accum_reward = accum_reward + reward_aft_action[0]  # we just take the first agent's reward, because we are using a joint reward, so all agents obtain the same reward.
                 if full_observable_critic_flag:
@@ -636,7 +567,7 @@ def main(args):
                     accum_reward = accum_reward + sum(reward_aft_action)
 
                 step_update_time_start = time.time()
-                c_loss, a_loss, single_eps_critic_cal_record = model.update_myown(episode, total_step, args.update_step, single_eps_critic_cal_record, transfer_learning, use_allNeigh_wRadar, use_selfATT_with_radar, use_nearestN_neigh_wRadar, shared_one_actor_central_critic, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
+                c_loss, a_loss, single_eps_critic_cal_record = model.update_myown(episode, total_step, UPDATE_EVERY, single_eps_critic_cal_record, transfer_learning, use_allNeigh_wRadar, use_selfATT_with_radar, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
                 # c_loss, a_loss, single_eps_critic_cal_record, current_row = model.update_myown_v2(episode, total_step, UPDATE_EVERY, single_eps_critic_cal_record, transfer_learning, own_obs_only, use_allNeigh_wRadar, use_selfATT_with_radar, step, experience_replay_record, action, current_row, excel_file_path, writer, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
                 # c_loss, a_loss, single_eps_critic_cal_record, current_row = model.update_myown_v3(episode, total_step, UPDATE_EVERY, single_eps_critic_cal_record, transfer_learning, own_obs_only, use_allNeigh_wRadar, use_selfATT_with_radar, step, experience_replay_record, action, current_row, excel_file_path, writer, wandb, full_observable_critic_flag, use_GRU_flag)  # last working learning framework
                 update_time_used = (time.time() - step_update_time_start)*1000
@@ -656,12 +587,11 @@ def main(args):
                     episode_decision[1] = True
                     print("Some agent triggers termination condition like collision, current episode {} ends at step {}".format(episode, step-1))  # we need to -1 here, because we perform step + 1 after each complete step. Just to be consistent with the step count inside the reward function.
                 # elif all([agent.reach_target for agent_idx, agent in env.all_agents.items()]):
-                # elif all(check_goal):
-                #     episode_decision[2] = True
-                #     print("All agents have reached their destinations at step {}, episode {} terminated.".format(step-1, episode))
+                elif all(check_goal):
+                    episode_decision[2] = True
+                    print("All agents have reached their destinations at step {}, episode {} terminated.".format(step-1, episode))
                 elif all([agent.reach_target for agent_idx, agent in env.all_agents.items()]):  # check whether these two termination condition has any difference
                     episode_decision[2] = True
-                    goal_reached = goal_reached + 1
                     print(
                         "All agents have reached their destinations at step {}, episode {} terminated.".format(step - 1,
                                                                                                                episode))
@@ -765,12 +695,9 @@ def main(args):
                     # plt.axis('equal')
                     # plt.show()
 
-                if True in episode_decision:  #  --- end of an episode starts here ---
+                if True in episode_decision:
 
-
-                    # record in this episode is there any target reach case.
-                    for agent_idx, agent in env.all_agents.items():
-                        episode_goal_found[agent_idx] = agent.reach_target
+                    # end of an episode starts here
 
                     # time_used = time.time() - start_time
                     # print("update function used {} seconds to run".format(time_used))
@@ -779,7 +706,7 @@ def main(args):
 
                     # print("[Episode %05d] reward %6.4f time used is %.2f sec" % (episode, accum_reward, time_used))
                     print("[Episode %05d] reward %6.4f" % (episode, accum_reward))
-                    eps_OD_record.append(cur_eps_OD)
+
                     if use_wanDB:
                         wandb.log({'overall_reward': float(accum_reward)}, step=episode)
                         if c_loss and a_loss:
@@ -816,16 +743,13 @@ def main(args):
                             all_drone_reach = all_drone_reach + 1
                             # print("There are no True values in the list.")
 
-                    if episode % 1000 == 0:  # every 100 episode we record the training performance (without evaluation)
+                    if episode % 100 == 0:  # every 100 episode we record the training performance (without evaluation)
                         # if episode == 10:
                         # After the loop, save the file once
-                        # writer.save()
-                        # print(f'Data saved to {excel_file_path}')
+                        writer.save()
+                        print(f'Data saved to {excel_file_path}')
                         # save a gif every 100 episode during training
                         episode_to_check = str(episode)
-                        goal_reach_history.append(goal_reached)
-                        print("For the previous 100 episode, the number of goal reaching count is {}".format(goal_reached))
-                        goal_reached = 0
                         save_gif(env, trajectory_eachPlay, plot_file_name, episode_to_check, episode)
                         print("collision count for last 100 episode is {}, {}%".format(collision_count,
                                                                         round(collision_count / 100 * 100,
@@ -891,31 +815,24 @@ def main(args):
                     #
                     break  # this is to break out from "while True:", which is one play
             elif args.mode == "eval":
-                png_file_name = pre_fix + '\episode_' + str(episode) + '_' + str(total_agentNum) + 'AC' + '.png'
-                path_to_save_eva_OD = pre_fix + '\_' +str(total_agentNum) + 'AC'
 
-                step_reward_record = [[0, 0]] * n_agents
+                step_reward_record = [None] * n_agents
                 # show_step_by_step = True
                 show_step_by_step = False
                 saved_gif = True  # Don't save gif while doing mass run
                 # saved_gif = False
                 noise_flag = False
-
                 # populate gru history
                 gru_history.append(np.array(norm_cur_state[0]))
 
                 # action, step_noise_val = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, gru_history, noisy=False) # noisy is false because we are using stochastic policy
-                action, step_noise_val, cur_actor_hiddens, next_actor_hiddens, cur_agent_masks_record = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, use_nearestN_neigh_wRadar, env.all_agents, shared_one_actor_central_critic, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
+                action, step_noise_val, cur_actor_hiddens, \
+                next_actor_hiddens = model.choose_action(norm_cur_state, total_step, episode, step, eps_end, noise_start_level, cur_actor_hiddens, use_allNeigh_wRadar, use_selfATT_with_radar, own_obs_only, noisy=noise_flag, use_GRU_flag=use_GRU_flag)  # noisy is false because we are using stochastic policy
 
                 # nearest_two_drones
-                next_state, norm_next_state, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record_aft_act = env.step(action, step, acc_max, args, evaluation_by_episode, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh)  # no heading update here
+                next_state, norm_next_state, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list = env.step(action, step, acc_max, args, evaluation_by_episode, full_observable_critic_flag)  # no heading update here
                 # reward_aft_action, done_aft_action, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check = env.ss_reward(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode, own_obs_only)
-                # reward_aft_action, done_aft_action, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check = env.ss_reward_Mar(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode)
-                (reward_aft_action, done_aft_action, check_goal, step_reward_record, status_holder,
-                 step_collision_record, bound_building_check) = env.ss_reward_Mar(step, step_reward_record,
-                                                                                  step_collision_record, dummy_xy,
-                                                                                  full_observable_critic_flag, args,
-                                                                                  evaluation_by_episode)
+                reward_aft_action, done_aft_action, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check = env.ss_reward_Mar(step, step_reward_record, step_collision_record, dummy_xy, full_observable_critic_flag, args, evaluation_by_episode)
                 # reward_aft_action, done_aft_action, check_goal, step_reward_record = env.get_step_reward_5_v3(step, step_reward_record)
 
                 step += 1
@@ -926,17 +843,17 @@ def main(args):
                 traj_step_list = []
                 for each_agent_idx, each_agent in env.all_agents.items():
                     # traj_step_list.append([each_agent.pos[0], each_agent.pos[1], reward_aft_action[each_agent_idx]])
-                    traj_step_list.append([each_agent.pos[0], each_agent.pos[1], np.array(step_reward_record[each_agent_idx][1]), each_agent.heading, each_agent.probe_line])
+                    traj_step_list.append([each_agent.pos[0], each_agent.pos[1], np.array(step_reward_record[each_agent_idx][1]), eps_status_holder[each_agent_idx]])
                 trajectory_eachPlay.append(traj_step_list)
                 accum_reward = accum_reward + sum(reward_aft_action)
-                # # show states in text
-                # for agentIdx, agent in env.all_agents.items():
-                #     print("drone {}, next WP is {}, deviation from ref line is {}, ref_line_reward is {}, "
-                #           "actual dist to goal is {}, dist_goal_reward is {}, velocity is {}, step {} reward is {}"
-                #           .format(agentIdx, agent.goal[-1], eps_status_holder[agentIdx]['deviation_to_ref_line'],
-                #                   eps_status_holder[agentIdx]['deviation_to_ref_line_reward'], eps_status_holder[agentIdx]['Euclidean_dist_to_goal'],
-                #                   eps_status_holder[agentIdx]['goal_leading_reward'], eps_status_holder[agentIdx]['current_drone_speed'], step,
-                #                   reward_aft_action[agentIdx]))
+                # show states in text
+                for agentIdx, agent in env.all_agents.items():
+                    print("drone {}, next WP is {}, deviation from ref line is {}, ref_line_reward is {}, "
+                          "actual dist to goal is {}, dist_goal_reward is {}, velocity is {}, step {} reward is {}"
+                          .format(agentIdx, agent.goal[-1], eps_status_holder[agentIdx]['deviation_to_ref_line'],
+                                  eps_status_holder[agentIdx]['deviation_to_ref_line_reward'], eps_status_holder[agentIdx]['Euclidean_dist_to_goal'],
+                                  eps_status_holder[agentIdx]['goal_leading_reward'], eps_status_holder[agentIdx]['current_drone_speed'], step,
+                                  reward_aft_action[agentIdx]))
 
                 if show_step_by_step:
                     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -1049,22 +966,14 @@ def main(args):
                     # episode_goal_found = [for agents in env.all_agents]
                 # if args.episode_length < step:  # when termination condition reached, without counting drone collision to buildings/wall
                     # display current episode out status through status_holder
-                    # for each_agent_idx, each_agent in enumerate(eps_status_holder):
-                    #     for step_idx, step_reward_decomposition in enumerate(each_agent):
-                    #         pass
-                    #         # print(r"agent {}, step {}, distance to goal is {} m, goal reward is {}, ref line reward is {}, current step reward is {}.".format(each_agent_idx, step_idx, step_reward_decomposition[0], step_reward_decomposition[1], step_reward_decomposition[2], step_reward_decomposition[3]))
-                    #         # print("near goal reward is {}".format(step_reward_decomposition[6]))
-                    #         # print("current spd is {} m/s, curent spd penalty is {}". format(step_reward_decomposition[5], step_reward_decomposition[4]))
+                    for each_agent_idx, each_agent in enumerate(eps_status_holder):
+                        for step_idx, step_reward_decomposition in enumerate(each_agent):
+                            pass
+                            # print(r"agent {}, step {}, distance to goal is {} m, goal reward is {}, ref line reward is {}, current step reward is {}.".format(each_agent_idx, step_idx, step_reward_decomposition[0], step_reward_decomposition[1], step_reward_decomposition[2], step_reward_decomposition[3]))
+                            # print("near goal reward is {}".format(step_reward_decomposition[6]))
+                            # print("current spd is {} m/s, curent spd penalty is {}". format(step_reward_decomposition[5], step_reward_decomposition[4]))
                     print("[Episode %05d] reward %6.4f " % (episode, accum_reward))
-                    # -------- start calculate the flight distance ratio at end of an episode during evaluation --------
-                    flight_ratio_per_eps_all_AC = obtain_euclidean_dist_list_all_AC(flight_ratio_per_eps_all_AC, trajectory_eachPlay, env)
-                    entire_evaluation_run_flight_ratio.extend(flight_ratio_per_eps_all_AC)
-                    # -------- end of calculate the flight distance ratio at end of an episode during evaluation --------
-                    evaluation_OD_repeatability.append([eps_all_ac_eva_OD_eta, trajectory_eachPlay, env.cloud_config])
 
-                    # view_static_traj(env, trajectory_eachPlay, png_file_name, max_time_step=30)
-                    # view_static_traj(env, trajectory_eachPlay, png_file_name)
-                    # save_gif(env, trajectory_eachPlay, pre_fix, episode, episode)
                     if get_evaluation_status:
                         if simply_view_evaluation:
                         # ------------------ static display trajectory ---------------------------- #
@@ -1073,7 +982,7 @@ def main(args):
 
                         # ---------- new save as gif ----------------------- #
                         else:
-                            save_gif(env, trajectory_eachPlay, pre_fix, episode, episode)
+                            save_gif(env, trajectory_eachPlay, pre_fix, episode_to_check, episode)
                     if evaluation_by_episode:
                         if True in done_aft_action and step < args.episode_length:
                             # save_gif(env, trajectory_eachPlay, pre_fix, episode_to_check, episode)
@@ -1156,6 +1065,8 @@ def main(args):
                                 idle_drone = idle_drone + 1
                     break
 
+    # with open('all_eps_OD.pickle', 'wb') as handle:
+    #     pickle.dump(all_eps_OD, handle, protocol=pickle.HIGHEST_PROTOCOL)
     if args.mode == "train":  # only save pickle at end of training to save computational time.
         with open(plot_file_name + '/all_episode_reward.pickle', 'wb') as handle:
             pickle.dump(eps_reward_record, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1165,24 +1076,14 @@ def main(args):
             pickle.dump(eps_time_record, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(plot_file_name + '/all_episode_collision.pickle', 'wb') as handle:
             pickle.dump(eps_check_collision, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(plot_file_name + '/all_episode_OD.pickle', 'wb') as handle:
-            pickle.dump(eps_OD_record, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(file_name + '/GFG.csv', 'w', newline='') as f:
+        with open(file_name + '/GFG.csv', 'w') as f:
             # using csv.writer method from CSV package
             write = csv.writer(f)
-            for item in score_history:
-                write.writerow([item])
-        with open(file_name + '/goal_reaching.csv', 'w') as f:
-            write = csv.writer(f)
-            for goal_item in goal_reach_history:
-                write.writerow([goal_item])
+            write.writerows([score_history])
         # After the loop, save the file once
-        # writer.save()
-        # print(f'Data saved to {excel_file_path}')
+        writer.save()
+        print(f'Data saved to {excel_file_path}')
     else:
-        if save_cur_eva_OD:
-            with open(path_to_save_eva_OD + '_cur_eva_fixedAR_OD.pickle', 'wb') as handle:
-                pickle.dump(evaluation_OD_repeatability, handle, protocol=pickle.HIGHEST_PROTOCOL)
         if evaluation_by_episode:
             print("total collision count is {}, {}%".format(collision_count, round(collision_count/args.max_episodes*100,2)))
             print("Collision due to bound is {}".format(crash_to_bound))
@@ -1198,9 +1099,6 @@ def main(args):
             print("Six goal reached count is {}, {}%".format(six_drone_reach, round(six_drone_reach/100*100, 2)))
             print("Seven goal reached count is {}, {}%".format(seven_drone_reach, round(seven_drone_reach/100*100, 2)))
             print("All goal reached count is {}, {}%".format(all_drone_reach, round(all_drone_reach/100*100, 2)))
-            mean_flight_dist_ratio = np.mean(entire_evaluation_run_flight_ratio)
-            std_flight_dist_ratio = np.std(entire_evaluation_run_flight_ratio)
-            print("In evaluation by episode mode, the mean of overall flight distance ratio is {}, std is {}".format(mean_flight_dist_ratio, std_flight_dist_ratio))
         else:
             print("Total collision {}".format(collision_count))
             print("Collision to bound {}".format(crash_to_bound))
@@ -1209,16 +1107,14 @@ def main(args):
             print("Destination reached {}".format(sorties_reached))
             print("Idle UAV {}".format(idle_drone))
     print(f'training finishes, time spent: {datetime.timedelta(seconds=int(time.time() - training_start_time))}')
-
-    # os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-    # matplotlib.use('TkAgg')
-    # # plot2 = plt.plot(steps_before_collide)
-    # plot2 = plt.scatter(range(len(steps_before_collide)), steps_before_collide)
-    # plt.grid(linestyle='-.')
-    # plt.xlabel('episodes')
-    # plt.ylabel('steps taken')
-    # plt.show()
-
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    matplotlib.use('TkAgg')
+    # plot2 = plt.plot(steps_before_collide)
+    plot2 = plt.scatter(range(len(steps_before_collide)), steps_before_collide)
+    plt.grid(linestyle='-.')
+    plt.xlabel('episodes')
+    plt.ylabel('steps taken')
+    plt.show()
     if use_wanDB:
         wandb.finish()
 
@@ -1227,22 +1123,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--scenario', default="simple_spread", type=str)
     parser.add_argument('--max_episodes', default=20000, type=int)  # run for a total of 50000 episodes
-    parser.add_argument('--algo', default="maddpg", type=str, help="commnet/bicnet/maddpg")
+    parser.add_argument('--algo', default="maddpg", type=str, help ="commnet/bicnet/maddpg")
     parser.add_argument('--mode', default="eval", type=str, help="train/eval")
-    parser.add_argument('--noCR', default="yes", type=str, help="yes/no")
+    # parser.add_argument('--episode_length', default=150, type=int)  # maximum play per episode
     parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
-    # parser.add_argument('--episode_length', default=120, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
     parser.add_argument('--memory_length', default=int(1e5), type=int)
     # parser.add_argument('--memory_length', default=int(1e4), type=int)
     parser.add_argument('--seed', default=777, type=int)  # may choose to use 3407
-    # parser.add_argument('--batch_size', default=2, type=int)  # original 512
+    # parser.add_argument('--batch_size', default=10, type=int)  # original 512
     parser.add_argument('--batch_size', default=512, type=int)  # original 512
     # parser.add_argument('--batch_size', default=3, type=int)  # original 512
     # parser.add_argument('--batch_size', default=1536, type=int)  # original 512
-    parser.add_argument('--gamma', default=0.95, type=float)
-    parser.add_argument('--tau', default=0.01, type=float)
-    parser.add_argument('--update_step', default=1, type=int)
     parser.add_argument('--render_flag', default=False, type=bool)
     parser.add_argument('--ou_theta', default=0.15, type=float)
     parser.add_argument('--ou_mu', default=0.0, type=float)

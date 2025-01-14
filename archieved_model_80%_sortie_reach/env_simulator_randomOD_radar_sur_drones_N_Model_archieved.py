@@ -8,8 +8,8 @@
 """
 import copy
 import jps
-import pickle
 import warnings
+import pickle
 from jps_straight import jps_find_path
 from collections import OrderedDict
 from shapely.ops import nearest_points
@@ -21,7 +21,7 @@ from scipy.spatial import KDTree
 import random
 import itertools
 from copy import deepcopy
-from agent_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import Agent
+from agent_randomOD_radar_sur_drones_N_Model_archieved import Agent
 import pandas as pd
 import math
 import numpy as np
@@ -31,10 +31,9 @@ from matplotlib.transforms import Affine2D
 from shapely.affinity import scale
 import matplotlib.pyplot as plt
 import matplotlib
-from cloud import cloud_agent
 import re
 import time
-from Utilities_own_randomOD_radar_sur_drones_N_Model_use_tdCPA_forV3 import *
+from Utilities_own_randomOD_radar_sur_drones_N_Model_archieved import *
 import torch as T
 import torch
 import torch.nn.functional as F
@@ -42,12 +41,13 @@ import torch.nn as nn
 
 
 class env_simulator:
-    def __init__(self, world_map, building_polygons, grid_length, bound, allGridPoly):  # allGridPoly[0][0] is all grid=1
+    def __init__(self, world_map, building_polygons, grid_length, bound, allGridPoly, agentConfig):  # allGridPoly[0][0] is all grid=1
         self.world_map_2D = world_map  # 2D binary matrix, in ndarray form.
         self.world_map_2D_jps = None
         self.centroid_to_position_empty = {}
         self.centroid_to_position_occupied = {}
         self.world_map_2D_polyList = allGridPoly  # [0][0] is all occupied polygon, [0][1] is all non-occupied polygon
+        self.agentConfig = agentConfig
         self.gridlength = grid_length
         self.buildingPolygons = building_polygons  # contain all polygon in the world that has building
         self.world_STRtree = None  # contains all polygon in the environment
@@ -84,22 +84,14 @@ class env_simulator:
         self.target_area4_polymat = None
         self.target_pool = None
 
-        # change skin
-        self.cloud_config = None
-        self.potential_ref_line = None
-        self.boundaries = None
-        self.acc_range = None
-
     def create_world(self, total_agentNum, n_actions, gamma, tau, target_update, largest_Nsigma, smallest_Nsigma, ini_Nsigma, max_xy, max_spd, acc_range):
         # config OU_noise
-        # self.OU_noise = OrnsteinUhlenbeckProcess(n_actions)
-        self.acc_range = acc_range
+        self.OU_noise = OUNoise(n_actions, largest_Nsigma, smallest_Nsigma, ini_Nsigma)
         self.normalizer = NormalizeData([self.bound[0], self.bound[1]], [self.bound[2], self.bound[3]], max_spd, acc_range)
         self.all_agents = {}
         self.allbuildingSTR = STRtree(self.world_map_2D_polyList[0][0])
         building_centroid = [poly.centroid.coords[0] for poly in self.world_map_2D_polyList[0][0]]
         self.allbuilding_centre = np.array(building_centroid)
-        self.building_polygon_STR = STRtree(self.buildingPolygons)
 
         # self.allbuilding_centre =
         worldGrid_polyCombine = []
@@ -207,11 +199,47 @@ class env_simulator:
                 # top left
                 # plt.plot(centre_coord[0], centre_coord[1], marker='.', color='g', markersize=2)
 
-    def reset_world(self, total_agentNum, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, shared_one_actor_central_critic, show):  # set initialize position and observation for all agents
+    def reset_world(self, total_agentNum, full_observable_critic_flag, episode, show):  # set initialize position and observation for all agents
         self.global_time = 0.0
         self.time_step = 0.5
         # reset OU_noise as well
-        # self.OU_noise.reset()
+        self.OU_noise.reset()
+
+        # # ----------------- using fixed OD -----------------
+        # # read the Excel file into a pandas dataframe
+        # # df = pd.read_excel(r"D:\Multi_agent_AAC\MA_ver1\fixedDrone_3drones.xlsx")
+        # df = pd.read_excel(r"F:\githubClone\Multi_agent_AAC\MA_ver1\fixedDrone_3drones.xlsx")
+        # # convert the dataframe to a NumPy array
+        # custom_agent_data = np.array(df)
+        # # custom_agent_data = custom_agent_data.astype(float)
+        # agentsCoor_list = []  # for store all agents as circle polygon
+        # agentRefer_dict = {}  # A dictionary to use agent's current pos as key, their agent name (idx) as value
+        # for agentIdx in self.all_agents.keys():
+        #     self.all_agents[agentIdx].pos = custom_agent_data[agentIdx][0:2]
+        #     self.all_agents[agentIdx].ini_pos = custom_agent_data[agentIdx][0:2]
+        #     self.all_agents[agentIdx].removed_goal = None
+        #     self.all_agents[agentIdx].reach_target = False
+        #     # for fixed OD, we include the initial point into our goal list as well
+        #     self.all_agents[agentIdx].goal = [self.all_agents[agentIdx].ini_pos]
+        #
+        #     if not isinstance(custom_agent_data[agentIdx][2:4][0], str):
+        #         self.all_agents[agentIdx].goal = self.all_agents[agentIdx].goal + [custom_agent_data[agentIdx][2:4]]
+        #     else:
+        #         x_coords = np.array([int(coord.split('; ')[0]) for coord in custom_agent_data[agentIdx][2:4]])
+        #         y_coords = np.array([int(coord.split('; ')[1]) for coord in custom_agent_data[agentIdx][2:4]])
+        #         self.all_agents[agentIdx].goal = self.all_agents[agentIdx].goal + [x_coords, y_coords]
+        #
+        #     self.all_agents[agentIdx].ref_line = LineString(self.all_agents[agentIdx].goal)
+        # # -----------------end of using fixed OD -----------------
+
+        # reset the drone index to 0,1,2, ensure all index reset at starting of a new episode
+        # keys = list(self.all_agents.keys())
+        # for new_Idx, current_Idx in zip(range(total_agentNum), keys):
+        #     self.all_agents[new_Idx] = self.all_agents.pop(current_Idx)
+        #     self.all_agents[new_Idx].agent_name = 'agent_%s' % new_Idx
+        #     self.all_agents[new_Idx].pre_surroundingNeighbor = {}  # at start of each episode ensure all surrounding/pre-surrounding neighbours are cleared.
+        #     self.all_agents[new_Idx].surroundingNeighbor = {}
+        #     self.all_agents[new_Idx].reach_target = False
 
         # start_time = time.time()
         agentsCoor_list = []  # for store all agents as circle polygon
@@ -219,13 +247,8 @@ class env_simulator:
 
         start_pos_memory = []
 
-        # --------- bound config ------------------
-        x_left = LineString([(self.bound[0], self.bound[2]), (self.bound[0], self.bound[3])])
-        x_right = LineString([(self.bound[1], self.bound[2]), (self.bound[1], self.bound[3])])
-        y_top = LineString([(self.bound[0], self.bound[3]), (self.bound[1], self.bound[3])])
-        y_bottom = LineString([(self.bound[0], self.bound[2]), (self.bound[1], self.bound[2])])
-        self.boundaries = [x_left, x_right, y_top, y_bottom]  # not used
-        # -------- end of bound config ---------
+        # random_start_pos_list = [(600,380), (620,380), (650,280),(650,290),(490,270),(460,330),(580,370),(500,340)]
+        # random_end_pos_list = [(490,330), (470,360), (550,350),(560,340),(500,350),(620,360),(460,270),(660,280)]
 
         # any_collision = 0
         # loop_count = 0
@@ -254,6 +277,22 @@ class env_simulator:
             random_end_pos = random.choice(self.target_pool[random_target_index])
             dist_between_se = np.linalg.norm(np.array(random_end_pos) - np.array(random_start_pos))
 
+            # while dist_between_se >= 100:  # the distance between start & end point is more than a threshold, we reset SE pairs.
+            #     random_end_pos = random.choice(self.target_pool[random_target_index])
+            #     dist_between_se = np.linalg.norm(np.array(random_end_pos) - np.array(random_start_pos))
+
+            # own self set
+            # if agentIdx == 0:
+            #     random_start_pos = (480, 360)
+            #     random_end_pos = (600, 360)
+            #     pass
+
+            # random_start_pos = one_set_SE_collection[episode-1][agentIdx][0]
+            # random_end_pos = one_set_SE_collection[episode-1][agentIdx][1]
+            # random_start_pos = one_set_SE_collection[agentIdx][0]
+            # random_end_pos = one_set_SE_collection[agentIdx][1]
+
+            random_end_pos_collection.append([random_start_pos, random_end_pos])
             host_current_circle = Point(np.array(random_start_pos)[0], np.array(random_start_pos)[1]).buffer(self.all_agents[agentIdx].protectiveBound)
 
             possiblePoly = self.allbuildingSTR.query(host_current_circle)
@@ -277,11 +316,6 @@ class env_simulator:
             # make sure we reset reach target
             self.all_agents[agentIdx].reach_target = False
             self.all_agents[agentIdx].collide_wall_count = 0
-
-
-            # ----------- include ini_eta ---------------
-            self.all_agents[agentIdx].ini_eta = random.randint(0, 10)
-            # ----------- end of include ini_eta ------------
 
             # large_start = [random_start_pos[0] / self.gridlength, random_start_pos[1] / self.gridlength]
             # large_end = [random_end_pos[0] / self.gridlength, random_end_pos[1] / self.gridlength]
@@ -382,12 +416,11 @@ class env_simulator:
         #     if loop_count % 500 == 0:
         #         print("set {} generated".format(loop_count))
         # print("The {}th set starting point generated, one initial collision case happened".format(loop_count))
-
+        # all_eps_OD.append(random_end_pos_collection)
         # overall_state, norm_overall_state = self.cur_state_norm_state_fully_observable(agentRefer_dict)
         # print('time used is {}'.format(time.time() - start_time))
-
         overall_state, norm_overall_state, polygons_list, all_agent_st_pos, all_agent_ed_pos, all_agent_intersection_point_list, \
-        all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record = self.cur_state_norm_state_v3(agentRefer_dict, full_observable_critic_flag, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, evaluation_by_fixed_ar)
+        all_agent_line_collection, all_agent_mini_intersection_list = self.cur_state_norm_state_v3(agentRefer_dict, full_observable_critic_flag)
 
         if show:
             os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -402,434 +435,6 @@ class env_simulator:
                 self_circle = Point(agent.pos[0], agent.pos[1]).buffer(agent.protectiveBound, cap_style='round')
                 grid_mat_Scir = shapelypoly_to_matpoly(self_circle, False, 'k')
                 # ax.add_patch(grid_mat_Scir)
-
-                # plot drone's detection range
-                detec_circle = Point(agent.pos[0], agent.pos[1]).buffer(agent.detectionRange / 2, cap_style='round')
-                detec_circle_mat = shapelypoly_to_matpoly(detec_circle, False, 'r')
-                ax.add_patch(detec_circle_mat)
-
-                # link individual drone's starting position with its goal
-                ini = agent.ini_pos
-                for wp in agent.goal:
-                    plt.plot(wp[0], wp[1], marker='*', color='y', markersize=10)
-                    plt.plot([wp[0], ini[0]], [wp[1], ini[1]], '--', color='c')
-                    ini = wp
-                plt.plot(agent.goal[-1][0], agent.goal[-1][1], marker='*', color='y', markersize=10)
-                plt.text(agent.goal[-1][0], agent.goal[-1][1], agent.agent_name)
-
-            # draw occupied_poly
-            for one_poly in self.world_map_2D_polyList[0][0]:
-                one_poly_mat = shapelypoly_to_matpoly(one_poly, True, 'y', 'b')
-                ax.add_patch(one_poly_mat)
-            # draw non-occupied_poly
-            for zero_poly in self.world_map_2D_polyList[0][1]:
-                zero_poly_mat = shapelypoly_to_matpoly(zero_poly, False, 'y')
-                ax.add_patch(zero_poly_mat)
-
-            # show building obstacles
-            for poly in self.buildingPolygons:
-                matp_poly = shapelypoly_to_matpoly(poly, False, 'red')  # the 3rd parameter is the edge color
-                ax.add_patch(matp_poly)
-
-            # show the nearest building obstacles
-            # nearest_buildingPoly_mat = shapelypoly_to_matpoly(nearest_buildingPoly, True, 'g', 'k')
-            # ax.add_patch(nearest_buildingPoly_mat)
-
-            # for demo purposes
-            # for poly in polygons_list:
-            #     if poly.geom_type == "Polygon":
-            #         matp_poly = shapelypoly_to_matpoly(poly, False, 'red')  # the 3rd parameter is the edge color
-            #         ax.add_patch(matp_poly)
-            #     else:
-            #         x, y = poly.xy
-                    # ax.plot(x, y, color='green', linewidth=2, solid_capstyle='round', zorder=3)
-            # # Plot each start point
-            # for point_deg, point_pos in st_points.items():
-            #     ax.plot(point_pos.x, point_pos.y, 'o', color='blue')
-            #
-            # # Plot each end point
-            # for point_deg, point_pos in ed_points.items():
-            #     ax.plot(point_pos.x, point_pos.y, 'o', color='green')
-            #
-            # # Plot the lines of the LineString
-            # for lines in line_collection:
-            #     x, y = lines.xy
-            #     ax.plot(x, y, color='blue', linewidth=2, solid_capstyle='round', zorder=2)
-            #
-            # # point_counter = 0
-            # # # Plot each intersection point
-            # # for point in intersection_point_list:
-            # #     for ea_pt in point.geoms:
-            # #         point_counter = point_counter + 1
-            # #         ax.plot(ea_pt.x, ea_pt.y, 'o', color='red')
-            #
-            # # plot minimum intersection point
-            # # for pt_dist, pt_pos in mini_intersection_list.items():
-            # for pt_pos in mini_intersection_list:
-            #     if pt_pos.type == 'MultiPoint':
-            #         for ea_pt in pt_pos.geoms:
-            #             ax.plot(ea_pt.x, ea_pt.y, 'o', color='yellow')
-            #     else:
-            #         ax.plot(pt_pos.x, pt_pos.y, 'o', color='red')
-
-
-
-            # for ele in self.spawn_area1_polymat:
-            #     ax.add_patch(ele)
-            # for ele2 in self.spawn_area2_polymat:
-            #     ax.add_patch(ele2)
-            # for ele3 in self.spawn_area3_polymat:
-            #     ax.add_patch(ele3)
-            # for ele4 in self.spawn_area4_polymat:
-            #     ax.add_patch(ele4)
-
-            # plt.axvline(x=self.bound[0], c="green")
-            # plt.axvline(x=self.bound[1], c="green")
-            # plt.axhline(y=self.bound[2], c="green")
-            # plt.axhline(y=self.bound[3], c="green")
-
-            plt.xlabel("X axis")
-            plt.ylabel("Y axis")
-            plt.axis('equal')
-            plt.show()
-
-        return overall_state, norm_overall_state
-
-
-    def reset_world_change_skin(self, total_agentNum, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, show):  # set initialize position and observation for all agents
-        self.global_time = 0.0
-        self.time_step = 0.5
-        # reset OU_noise as well
-        # self.OU_noise.reset()
-
-        # start_time = time.time()
-        agentsCoor_list = []  # for store all agents as circle polygon
-        agentRefer_dict = {}  # A dictionary to use agent's current pos as key, their agent name (idx) as value
-
-        start_pos_memory = []
-        star_map_list = {
-            'star1': [(500, 360), (550, 280)],
-            'star2': [(46.176, 190.299), (75, 75), (85.334, 15)],
-            'star3': [(580, 270), (650, 375)],
-            # 'star3': [(108.497, 8.911), (110, 10)],
-            'star4': [(139.538, 9.936), (160.002, 190.064)]
-        }
-
-        # ___SG air routes in an area of 200 x 200 nm ___
-        sg_routes = {
-            'OD1': [(10, 53), (180, 190)],
-            'OD2': [(20, 145), (190, 10)],
-            'OD3': [(90, 10), (190, 88)],
-        }
-
-        AR_1_routes = {
-            'OD1': [(20, 180), (150, 20)],
-            'OD2': [(20, 140), (180, 140)],
-            'OD3': [(60, 20), (160, 180)],
-        }
-
-        AR2_routes = {
-            'OD1': [(20, 180), (170, 20)],
-            'OD2': [(20, 102), (185, 102)],
-            'OD3': [(20, 30), (170, 180)],
-        }
-
-        AR_routes = sg_routes
-        # AR_routes = AR_1_routes
-        # AR_routes = AR2_routes
-
-        # --------- bound config ------------------
-        x_left = LineString([(self.bound[0], self.bound[2]), (self.bound[0], self.bound[3])])
-        x_right = LineString([(self.bound[1], self.bound[2]), (self.bound[1], self.bound[3])])
-        y_top = LineString([(self.bound[0], self.bound[3]), (self.bound[1], self.bound[3])])
-        y_bottom = LineString([(self.bound[0], self.bound[2]), (self.bound[1], self.bound[2])])
-        bounds = [x_left, x_right, y_top, y_bottom]  # not used
-        # -------- end of bound config ---------
-
-        # -------- start of add cloud -----------
-        # ---------- start of sg_route_clouds with fixed cloud OD for 5.3 --------------- #
-        # cloud_0 = [50, 180, 80, 30]
-        # cloud_1 = [100, 140, 140, 40]
-        # all_clouds = [cloud_0, cloud_1]
-        cloud_0 = [30, 185, 180, 80]
-        cloud_1 = [30, 100, 180, 30]
-        all_clouds = [cloud_0, cloud_1]
-        # ---------- end of sg_route_clouds with fixed cloud OD for 5.3 --------------- #
-
-        # #AR1_clouds
-        # cloud_0 = [175, 130, 20, 50]
-        # # cloud_1 = [190, 100, 100, 50]
-
-        # #AR2_clouds
-        # cloud_0 = [135, 190, 80, 25]
-        # # cloud_1 = [190, 100, 100, 50]
-
-        # --------- start of manually assigned a fixed cloud OD config for chapter 5.5, 4 graph-------------- #
-        # cloud_0 = [40, 13, 175, 60]
-        # cloud_1 = [40, 180, 125, 88]
-        # cloud_2 = [50, 198, 165, 150]
-        # all_clouds = [cloud_0, cloud_1, cloud_2]
-        # --------- end of manually assigned a fixed cloud OD config chapter 5.5, 4 graph-------------- #
-
-        # ------- start of generate random cloud number -------------- #
-        # all_clouds = []
-        # cloud_num = 1
-        # for _ in range(cloud_num):
-        #     cloud_ori_no_spawn_zone = []  # there is a maximum of 3 set of origin or destination, so at most list length equals to 3.
-        #     cloud_dest_no_spawn_zone = []
-        #     # set threshold
-        #     thresh = 20+5  # my final goal or starting point is not a point, but a circle
-        #     # min_distance_between_cloud_OD = 40
-        #     for OD_pt in AR_routes.values():
-        #         ori_pt_x, ori_pt_y = OD_pt[0][0], OD_pt[0][1]
-        #         dest_pt_x, dest_pt_y = OD_pt[1][0], OD_pt[1][1]
-        #         cloud_ori_no_spawn_zone.append((ori_pt_x-thresh, ori_pt_x+thresh, ori_pt_y-thresh, ori_pt_y+thresh))
-        #         cloud_dest_no_spawn_zone.append((dest_pt_x-thresh, dest_pt_x+thresh, dest_pt_y-thresh, dest_pt_y+thresh))
-        #     cloud_coord_origin = generate_random_circle_multiple_exclusions(self.bound, cloud_ori_no_spawn_zone)
-        #     # generate_random_circle_multiple_exclusions_with_refPt(self.bound)
-        #     cloud_coord_destination = generate_random_circle_multiple_exclusions_with_refPt(self.bound, cloud_dest_no_spawn_zone, cloud_coord_origin)
-        #     all_clouds.append(cloud_coord_origin + cloud_coord_destination)
-        # ------- end of generate random cloud number -------------- #
-
-        # #SG_route_cloud
-        # cloud_0 = [50, 180, 75, 25]
-        # cloud_1 = [110, 140, 140, 40]
-
-        # #AR1_clouds
-        # cloud_0 = [125, 175, 75, 25]
-        # cloud_1 = [190, 100, 100, 50]
-        # #AR2_clouds
-        # cloud_0 = [125, 175, 75, 25]
-        # cloud_1 = [190, 100, 100, 50]
-
-        # all_clouds = [cloud_0]
-        # all_clouds = [cloud_1]
-        # all_clouds = [cloud_0, cloud_1]
-
-        cloud_config = []
-        no_spawn_zone = []
-        for cloud_idx, cloud_setting in enumerate(all_clouds):
-            cloud_a = cloud_agent(cloud_idx)
-            cloud_a.pos = Point(cloud_setting[0], cloud_setting[1])
-            cloud_a.ini_pos = cloud_a.pos
-            cloud_a.cloud_actual_cur_shape = cloud_a.pos.buffer(cloud_a.radius)
-            cloud_a.goal = Point(cloud_setting[2], cloud_setting[3])
-            cloud_a.trajectory.append(cloud_a.pos)
-            cloud_config.append(cloud_a)
-            no_spawn_zone.append((cloud_setting[0]-30, cloud_setting[0]+30, cloud_setting[1]-30, cloud_setting[1]+30))
-
-        # additional no spawn zone to account for aircraft don't spawn near the map boundaries
-        no_spawn_zone.append((self.bound[0], self.bound[1], self.bound[2], self.bound[2]+10))  # x-axis, lower bound
-        no_spawn_zone.append((self.bound[0], self.bound[1], self.bound[3]-10, self.bound[3]))  # x-axis, upper bound
-        no_spawn_zone.append((self.bound[0], self.bound[0]+10, self.bound[2], self.bound[3]))  # y-axis, left bound
-        no_spawn_zone.append((self.bound[1]-10, self.bound[1], self.bound[2], self.bound[3]))  # y-axis, right bound
-        # end of additional no spawn zone to account for aircraft don't spawn near the map boundaries
-
-        # -------- end of add cloud -----------
-
-        # --------- potential reference line (only for display not involved in training)---------
-        # line_w1 = LineString([(487, 360), (530, 320), (550, 260)])
-        # line_w2 = LineString([(525, 380), (540, 320), (550, 260)])
-        # line_w3 = LineString([(580, 255), (650, 385)])
-        # line_w4 = LineString([(640, 255), (600, 385)])
-        potential_RF = []
-        for ar_name, ar_od in AR_routes.items():
-            line = LineString(ar_od)
-            potential_RF.append(line)
-        # potential_RF = [line_w1, line_w2, line_w3, line_w4]
-        self.potential_ref_line = potential_RF
-        self.cloud_config = cloud_config
-        self.boundaries = bounds
-        # ---------- end of potential reference line ---------
-
-        if evaluation_by_fixed_ar:
-            assigned_agents = {key: [] for key in AR_routes.keys()}
-            for agentIdx in self.all_agents.keys():
-                selected_choice = random.choice(list(AR_routes.keys()))
-                self.all_agents[agentIdx].ar = selected_choice
-                assigned_agents[selected_choice].append(agentIdx)
-            for routes in assigned_agents.keys():
-                if len(assigned_agents[routes]) > 1:
-                    for current_route_value_numbering, each_agent_idx in enumerate(assigned_agents[routes]):
-                        if current_route_value_numbering == 0:
-                            continue
-                        if self.all_agents[assigned_agents[routes][current_route_value_numbering-1]].eta is None:
-                            self.all_agents[assigned_agents[routes][current_route_value_numbering]].eta = random.randint(25, 30)
-                            self.all_agents[assigned_agents[routes][current_route_value_numbering]].ini_eta = \
-                                self.all_agents[assigned_agents[routes][current_route_value_numbering]].eta
-                        else:  # this is to prevent the subsequent AC spawn too near to each other, if all use t=0 as the datum.
-                            self.all_agents[assigned_agents[routes][current_route_value_numbering]].eta = \
-                                self.all_agents[assigned_agents[routes][current_route_value_numbering-1]].eta + random.randint(25, 30)
-                            self.all_agents[assigned_agents[routes][current_route_value_numbering]].ini_eta = \
-                                self.all_agents[assigned_agents[routes][current_route_value_numbering]].eta
-
-        random_end_pos_collection = []
-        for agentIdx in self.all_agents.keys():
-
-            # ---------------- using random initialized agent position for traffic flow ---------
-            random_start_index = random.randint(0, len(self.target_pool) - 1)
-            numbers_left = list(range(0, random_start_index)) + list(range(random_start_index + 1, len(self.target_pool)))
-            random_target_index = random.choice(numbers_left)
-
-            # random_start_pos = random.choice(self.target_pool[random_start_index])
-            random_start_pos = generate_random_circle_multiple_exclusions(self.bound, no_spawn_zone)
-
-            if len(start_pos_memory) > 0:
-                while len(start_pos_memory) < len(self.all_agents):  # make sure the starting drone generated do not collide with any existing drone
-                    # Generate a new point
-                    random_start_index = random.randint(0, len(self.target_pool) - 1)
-                    numbers_left = list(range(0, random_start_index)) + list(
-                        range(random_start_index + 1, len(self.target_pool)))
-                    random_target_index = random.choice(numbers_left)
-                    # random_start_pos = random.choice(self.target_pool[random_start_index])
-                    random_start_pos = generate_random_circle_multiple_exclusions(self.bound, no_spawn_zone)
-                    # Check that the distance to all existing points is more than safety buffer (5)*4
-                    if all(np.linalg.norm(np.array(random_start_pos)-point) > self.all_agents[agentIdx].protectiveBound*8 for point in start_pos_memory):
-                        break
-
-            # random_end_pos = random.choice(self.target_pool[random_target_index])
-            random_end_pos = generate_random_circle_multiple_exclusions(self.bound, no_spawn_zone)
-
-            if evaluation_by_fixed_ar:
-                # with open(
-                #         r'D:\MADDPG_2nd_jp\190824_15_17_16\interval_record_eps\4_AC_randomAR_3cL_randomOD_16000\_4AC_cur_eva_fixedAR_OD.pickle',
-                #         'rb') as handle:
-                #     OD_eta_record = pickle.load(handle)
-                # result_to_repeat = OD_eta_record[31]
-                # self.all_agents[agentIdx].ar = result_to_repeat[agentIdx][0]
-                # self.all_agents[agentIdx].eta = result_to_repeat[agentIdx][1]
-                # self.all_agents[agentIdx].ini_eta = result_to_repeat[agentIdx][1]
-
-                # --------- start of FixedAR, with different time step, 5.3, part 1 -----------
-                # keys = list(AR_routes.keys())  # Get a list of STAR-keys
-                # if agentIdx == 0:
-                #     self.all_agents[agentIdx].ar = keys[0]
-                #     self.all_agents[agentIdx].eta = None
-                #     self.all_agents[agentIdx].ini_eta = None
-                # elif agentIdx == 1:
-                #     self.all_agents[agentIdx].ar = keys[1]
-                #     self.all_agents[agentIdx].eta = None
-                #     self.all_agents[agentIdx].ini_eta = None
-                # elif agentIdx == 2:
-                #     self.all_agents[agentIdx].ar = keys[2]
-                #     self.all_agents[agentIdx].eta = None
-                #     self.all_agents[agentIdx].ini_eta = None
-                # elif agentIdx == 3:
-                #     self.all_agents[agentIdx].ar = keys[0]
-                #     self.all_agents[agentIdx].eta = 28
-                #     self.all_agents[agentIdx].ini_eta = 28
-                # else:
-                #     pass
-                # --------- end of FixedAR, with different time step, 5.3, part 1 -----------
-
-                random_start_pos = AR_routes[self.all_agents[agentIdx].ar][0]
-                random_end_pos = AR_routes[self.all_agents[agentIdx].ar][1]
-
-
-            self.all_agents[agentIdx].pos = np.array(random_start_pos)
-            self.all_agents[agentIdx].pre_pos = np.array(random_start_pos)
-            self.all_agents[agentIdx].ini_pos = np.array(random_start_pos)
-            start_pos_memory.append(np.array(random_start_pos))
-            self.all_agents[agentIdx].removed_goal = None
-            self.all_agents[agentIdx].bound_collision = False
-            self.all_agents[agentIdx].building_collision = False
-            self.all_agents[agentIdx].drone_collision = False
-            self.all_agents[agentIdx].cloud_collision = False
-            # make sure we reset reach target
-            self.all_agents[agentIdx].reach_target = False
-            self.all_agents[agentIdx].collide_wall_count = 0
-
-            # load the to goal, but remove/exclude the 1st point, which is the initial position
-            self.all_agents[agentIdx].goal = [list(random_end_pos)]
-            self.all_agents[agentIdx].waypoints = deepcopy(self.all_agents[agentIdx].goal)
-
-
-            # self.all_agents[agentIdx].ref_line = LineString(star_map_list[random_star_key])
-            self.all_agents[agentIdx].ref_line = LineString([random_start_pos, random_end_pos])
-            # ---------------- end of using random initialized agent position for traffic flow ---------
-
-            self.all_agents[agentIdx].ref_line_segments = {}
-            # Iterate over line coordinates and create line segments
-            for i in range(len(self.all_agents[agentIdx].ref_line.coords) - 1):
-                start_point = self.all_agents[agentIdx].ref_line.coords[i]
-                end_point = self.all_agents[agentIdx].ref_line.coords[i + 1]
-                segment = LineString([start_point, end_point])
-                self.all_agents[agentIdx].ref_line_segments[(start_point, end_point)] = segment
-
-            # heading in rad, must be goal_pos-intruder_pos, and y2-y1, x2-x1
-            # this is the initialized heading.
-            self.all_agents[agentIdx].heading = math.atan2(self.all_agents[agentIdx].goal[0][1] -
-                                                           self.all_agents[agentIdx].pos[1],
-                                                           self.all_agents[agentIdx].goal[0][0] -
-                                                           self.all_agents[agentIdx].pos[0])
-
-            # random_spd = random.randint(1, self.all_agents[agentIdx].maxSpeed)  # initial speed is randomly picked from 1 to max speed
-            # random_spd = random.randint(1, 3)  # initial speed is randomly picked from 1 to max speed
-            # random_spd = 1  # we fixed a initialized spd
-            random_spd = 0  # we fixed a initialized spd
-            self.all_agents[agentIdx].vel = np.array([random_spd*math.cos(self.all_agents[agentIdx].heading),
-                                             random_spd*math.sin(self.all_agents[agentIdx].heading)])
-            self.all_agents[agentIdx].pre_vel = np.array([random_spd*math.cos(self.all_agents[agentIdx].heading),
-                                             random_spd*math.sin(self.all_agents[agentIdx].heading)])
-
-            # NOTE: UAV's max speed don't change with time, so when we find it normalized bound, we use max speed
-            # the below is the maximum normalized velocity range for map range -1 to 1, and maxSPD = 15m/s
-
-            self.all_agents[agentIdx].observableSpace = self.current_observable_space(self.all_agents[agentIdx])
-
-            # # ----------------------- end of random initialized ------------------------------
-
-            agentRefer_dict[(self.all_agents[agentIdx].pos[0],
-                             self.all_agents[agentIdx].pos[1])] = self.all_agents[agentIdx].agent_name
-
-            agentsCoor_list.append(self.all_agents[agentIdx].pos)
-
-
-        overall_state, norm_overall_state, polygons_list, all_agent_st_pos, all_agent_ed_pos, all_agent_intersection_point_list, \
-        all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record = self.cur_state_norm_state_v3(agentRefer_dict, full_observable_critic_flag, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, evaluation_by_fixed_ar)
-
-        if show:
-            os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-            matplotlib.use('TkAgg')
-            aircraft_svg_path = r'F:\githubClone\HotspotResolver_24\pictures\Aircraft.svg'  # Replace with your SVG path
-            plane_img = load_svg_image(aircraft_svg_path)
-            fig, ax = plt.subplots(1, 1)
-            plot_linestring(ax, x_left, zorder=5)
-            plot_linestring(ax, x_right, zorder=5)
-            plot_linestring(ax, y_top, zorder=5)
-            plot_linestring(ax, y_bottom, zorder=5)
-            # Define colors
-            colors = [
-                (0.5, 0, 0.5),  # Purple
-                (0.2, 0.8, 0.2),  # Lime
-                (1, 0, 0),  # Red
-                (0, 1, 0),  # Green
-                (0, 0, 1),  # Blue
-                (0, 1, 1),  # Cyan
-                (1, 0, 1),  # Magenta
-                (1, 1, 0),  # Yellow
-                (1, 0.65, 0),  # Orange
-            ]
-            for agentIdx, agent in self.all_agents.items():
-                x, y = agent.pos[0], agent.pos[1]
-                # plt.plot(agent.pos[0], agent.pos[1], marker=MarkerStyle("^"), color=colors[agentIdx])
-                # plt.text(agent.pos[0], agent.pos[1], agent.agent_name)
-                img_extent = [
-                    x - agent.protectiveBound,
-                    x + agent.protectiveBound,
-                    y - agent.protectiveBound,
-                    y + agent.protectiveBound
-                ]
-                heading = agent.heading * 180 / np.pi  # in degree
-                transform = Affine2D().rotate_deg_around(x, y, heading - 90) + ax.transData
-                ax.imshow(plane_img, extent=img_extent, zorder=10, transform=transform)
-                # plot self_circle of the drone
-                self_circle = Point(x, y).buffer(agent.protectiveBound, cap_style='round')
-                grid_mat_Scir = shapelypoly_to_matpoly(self_circle, inFill=True, Edgecolor=None,
-                                                       FcColor='lightblue')  # None meaning no edge
-                grid_mat_Scir.set_zorder(2)
-                grid_mat_Scir.set_alpha(0.9)  # Set transparency to 0.5
-                ax.add_patch(grid_mat_Scir)
 
                 # plot drone's detection range
                 detec_circle = Point(agent.pos[0], agent.pos[1]).buffer(agent.detectionRange / 2, cap_style='round')
@@ -852,16 +457,12 @@ class env_simulator:
             # draw non-occupied_poly
             for zero_poly in self.world_map_2D_polyList[0][1]:
                 zero_poly_mat = shapelypoly_to_matpoly(zero_poly, False, 'y')
-                # ax.add_patch(zero_poly_mat)
+                ax.add_patch(zero_poly_mat)
 
             # show building obstacles
             for poly in self.buildingPolygons:
                 matp_poly = shapelypoly_to_matpoly(poly, False, 'red')  # the 3rd parameter is the edge color
                 # ax.add_patch(matp_poly)
-
-            # shown bounding boxes
-            for bbox in no_spawn_zone:
-                plot_bounding_box(ax, bbox)
 
             # show the nearest building obstacles
             # nearest_buildingPoly_mat = shapelypoly_to_matpoly(nearest_buildingPoly, True, 'g', 'k')
@@ -1206,25 +807,88 @@ class env_simulator:
                                                                          agent.protectiveBound])
         return cur_agent.surroundingNeighbor
 
-    def cur_state_norm_state_v3(self, agentRefer_dict, full_observable_critic_flag, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, evaluation_by_fixed_ar):
-        # prepare for output states, each will increase based on portion of inputs
+    def cur_state_norm_state_v2(self, agentRefer_dict):
         overall = []
         norm_overall = []
-        agent_masks_record = []
-
-        # p1-p3 will increase based on number of agents
+        # prepare for output states
         overall_state_p1 = []
         overall_state_p2 = []
+        # prepare normalized output states
+        norm_overall_state_p1 = []
+        norm_overall_state_p2 = []
+        # loop over all agent again to obtain each agent's detectable neighbor
+        # second loop is required, because 1st loop is used to create the STR-tree of all agents
+        # circle centre at their position
+        for agentIdx, agent in self.all_agents.items():
+
+            # get current agent's name in term of integer
+            match = re.search(r'\d+(\.\d+)?', agent.agent_name)
+            if match:
+                agent_idx = int(match.group())
+            else:
+                agent_idx = None
+                raise ValueError('No number found in string')
+            # get agent's observable space around it
+            self.all_agents[agentIdx].observableSpace = self.current_observable_space_fixedLength(self.all_agents[agentIdx])
+            # identify neighbors (use distance)
+            # update the "surroundingNeighbor" attribute
+            agent.surroundingNeighbor = self.get_current_agent_nei(agent, agentRefer_dict)
+            # reset_world function we initialized both "surroundingNeighbor" and "pre_surroundingNeighbor" identically
+            agent.pre_surroundingNeighbor = agent.surroundingNeighbor
+
+            # populate the output stateV2 overall_state is a list of length equals to total number of agents
+            agent_own = np.array(
+                [agent.pos[0], agent.pos[1], agent.goal[0][0] - agent.pos[0], agent.goal[0][1] - agent.pos[1],
+                 agent.vel[0], agent.vel[1]])
+            # populate normalized agent_own
+            # norm_agent_own = []
+            norm_pos = self.normalizer.nmlz_pos([agent.pos[0], agent.pos[1]])
+
+            norm_G_diff = self.normalizer.nmlz_pos_diff(
+                [agent.goal[0][0] - agent.pos[0], agent.goal[0][1] - agent.pos[1]])
+
+            norm_vel = self.normalizer.nmlz_vel([agent.vel[0], agent.vel[1]])
+            norm_agent_own = list(norm_pos + norm_G_diff + norm_vel)
+
+            other_pos = []
+            norm_other_pos = []
+            for other_agentIdx, other_agent in self.all_agents.items():
+                if other_agentIdx != agent_idx:
+                    other_pos.append(other_agent.pos - agent.pos)
+                    norm_pos = self.normalizer.nmlz_pos(other_agent.pos - agent.pos)
+                    norm_other_pos.append(np.array(norm_pos))
+
+            # overall_state.append(np.array([agent_own, agent.observableSpace, agent.surroundingNeighbor], dtype=object))
+            overall_state_p1.append(np.concatenate((agent_own, np.array(other_pos).flatten())))
+            overall_state_p2.append(agent.observableSpace)
+            norm_overall_state_p1.append(np.concatenate((norm_agent_own, np.array(norm_other_pos).flatten())))
+            norm_overall_state_p2.append(agent.observableSpace)
+        overall.append(overall_state_p1)
+        overall.append(overall_state_p2)
+        norm_overall.append(norm_overall_state_p1)
+        norm_overall.append(norm_overall_state_p2)
+        return overall, norm_overall
+
+    def cur_state_norm_state_v3(self, agentRefer_dict, full_observable_critic_flag):
+        overall = []
+        norm_overall = []
+        # prepare for output states
+        overall_state_p1 = []
+        combine_overall_state_p1 = []
+        overall_state_p2 = []
+        combine_overall_state_p2 = []
         overall_state_p2_radar = []
+        combine_overall_state_p2_radar = []
         overall_state_p3 = []
 
         # prepare normalized output states
         norm_overall_state_p1 = []
+        combine_norm_overall_state_p1 = []
         norm_overall_state_p2 = []
+        combine_norm_overall_state_p2 = []
         norm_overall_state_p2_radar = []
+        combine_norm_overall_state_p2_radar = []
         norm_overall_state_p3 = []
-
-
 
         # record surrounding grids for all drones
         all_agent_st_pos = []
@@ -1246,13 +910,310 @@ class env_simulator:
                 raise ValueError('No number found in string')
 
             # get agent's observable space around it
-            agent.surroundingNeighbor = self.get_current_agent_nei(agent, agentRefer_dict, queue=True)  # when queue=True, meaning we already sort the neighbours by distance
+            # obs_grid_time = time.time()
+            # self.all_agents[agentIdx].observableSpace = self.current_observable_space_fixedLength_fromv2_flow(self.all_agents[agentIdx])
+            # self.all_agents[agentIdx].observableSpace = np.zeros((9))
+            # print("generate grid time is {} milliseconds".format((time.time()-obs_grid_time)*1000))
+            #
+            # identify neighbors (use distance)
+            # obs_nei_time = time.time()
+            agent.surroundingNeighbor = self.get_current_agent_nei(agent, agentRefer_dict, queue=True)
             # # print("generate nei time is {} milliseconds".format((time.time() - obs_nei_time) * 1000))
 
-            current_agent_action_mask = generate_mask(agent, self.boundaries, self.building_polygon_STR, self.cloud_config, self.acc_range, self.time_step)
-            self.all_agents[agentIdx].action_mask = current_agent_action_mask
-            agent_masks_record.append(current_agent_action_mask)
-            # region  ---- start of radar creation (detect cloud and boundaries and/or other AC) ----
+            #region start of create radar (with UAV detection) ------------- #
+            # drone_ctr = Point(agent.pos)
+            # nearest_buildingPoly_idx = self.allbuildingSTR.nearest(drone_ctr)
+            # nearest_buildingPoly = self.world_map_2D_polyList[0][0][nearest_buildingPoly_idx]
+            # dist_nearest = drone_ctr.distance(nearest_buildingPoly)
+            #
+            # # Re-calculate the 20 equally spaced points around the circle
+            # st_points = {degree: Point(drone_ctr.x + math.cos(math.radians(degree)) * agent.protectiveBound,
+            #                              drone_ctr.y + math.sin(math.radians(degree)) * agent.protectiveBound)
+            #                for degree in range(0, 360, 20)}
+            # # use centre point as start point
+            # st_points = {degree: drone_ctr for degree in range(0, 360, 20)}
+            # all_agent_st_pos.append(st_points)
+            #
+            # # radar_dist = (agent.detectionRange / 2) - agent.protectiveBound
+            # radar_dist = (agent.detectionRange / 2)
+            # # Re-define the polygons and build the STRtree again
+            # # polygons_list = [
+            # #     Polygon([(1, 1), (1, 3), (3, 3), (3, 1)]),
+            # #     Polygon([(2, -1), (2, -3), (4, -3), (4, -1)]),
+            # #     Polygon([(-3, -1), (-3, -3), (-1, -3), (-1, -1)]),
+            # #     Polygon([(-4, 2), (-4, 4), (-2, 4), (-2, 2)])
+            # # ]
+            # polygons_list_wBound = self.list_of_occupied_grid_wBound
+            # polygons_tree_wBound = self.allbuildingSTR_wBound
+            #
+            # distances = []
+            # intersection_point_list = []
+            # mini_intersection_list = []
+            # ed_points = {}
+            # line_collection = []
+            # for point_deg, point_pos in st_points.items():
+            #     drone_nearest_flag = -1
+            #     building_nearest_flag = -1
+            #     # Create a line segment from the circle's center to the point on the perimeter
+            #     # end_x = point_pos.x + radar_dist * math.cos(math.radians(point_deg))
+            #     # end_y = point_pos.y + radar_dist * math.sin(math.radians(point_deg))
+            #
+            #     # Create a line segment from the circle's center
+            #     end_x = drone_ctr.x + radar_dist * math.cos(math.radians(point_deg))
+            #     end_y = drone_ctr.y + radar_dist * math.sin(math.radians(point_deg))
+            #
+            #     end_point = Point(end_x, end_y)
+            #     ed_points[point_deg] = end_point
+            #     min_intersection_pt = end_point  # initialize the min_intersection_pt
+            #
+            #     # Create the LineString from the start point to the end point
+            #     line = LineString([point_pos, end_point])
+            #     line_collection.append(line)
+            #     # Query the STRtree for polygons that intersect with the line segment
+            #     intersecting_polygons = polygons_tree_wBound.query(line)
+            #
+            #     drone_min_dist = line.length
+            #     min_distance = line.length
+            #
+            #     # Build other drone's position circle, and decide the minimum intersection distance from cur host drone to other drone
+            #     for other_agents_idx, others in self.all_agents.items():
+            #         if other_agents_idx == agentIdx:
+            #             continue
+            #         other_circle = Point(others.pos).buffer(agent.protectiveBound)
+            #         # Check if the LineString intersects with the circle
+            #         if line.intersects(other_circle):
+            #             drone_nearest_flag = 0
+            #             # Find the intersection point(s)
+            #             intersection = line.intersection(other_circle)
+            #             # The intersection could be a Point or a MultiPoint
+            #             # If it's a MultiPoint, we'll calculate the distance to the first intersection
+            #             if intersection.geom_type == 'MultiPoint':
+            #                 # Calculate distance from the starting point of the LineString to each intersection point
+            #                 drone_perimeter_point = min(intersection.geoms, key=lambda point: drone_ctr.distance(point))
+            #
+            #             elif intersection.geom_type == 'Point':
+            #                 # Calculate the distance from the start of the LineString to the intersection point
+            #                 drone_perimeter_point = intersection
+            #             elif intersection.geom_type in ['LineString', 'MultiLineString']:
+            #                 # The intersection is a line (or part of the line lies on the circle's edge)
+            #                 # Find the nearest point on this "intersection line" to the start of the original line
+            #                 drone_perimeter_point = nearest_points(drone_ctr, intersection)[1]
+            #             elif intersection.geom_type == 'GeometryCollection':
+            #                 complex_min_dist = math.inf
+            #                 for geom in intersection:
+            #                     if geom.geom_type == 'Point':
+            #                         dist = drone_ctr.distance(geom)
+            #                         if dist < complex_min_dist:
+            #                             complex_min_dist = dist
+            #                             drone_perimeter_point = geom
+            #                     elif geom.geom_type == 'LineString':
+            #                         nearest_geom_point = nearest_points(drone_ctr, geom)[1]
+            #                         dist = drone_ctr.distance(nearest_geom_point)
+            #                         if dist < complex_min_dist:
+            #                             complex_min_dist = dist
+            #                             drone_perimeter_point = nearest_geom_point
+            #             else:
+            #                 raise ValueError(
+            #                     "Intersection is not a point or multipoint, which is unexpected for LineString and Polygon intersection.")
+            #             intersection_point_list.append(drone_perimeter_point)
+            #             drone_distance = drone_ctr.distance(drone_perimeter_point)
+            #             if drone_distance < drone_min_dist:
+            #                 drone_min_dist = drone_distance
+            #                 drone_nearest_pt = drone_perimeter_point
+            #     # ------------ end of radar check surrounding drone's position -------------------------
+            #
+            #     # # If there are intersecting polygons, find the nearest intersection point
+            #     if len(intersecting_polygons) != 0:  # check if a list is empty
+            #         building_nearest_flag = 1
+            #         # Initialize the minimum distance to be the length of the line segment
+            #         for polygon_idx in intersecting_polygons:
+            #             # Check if the line intersects with the building polygon's boundary
+            #             if polygons_list_wBound[polygon_idx].geom_type == "Polygon":  # intersection with buildings
+            #                 # pass
+            #                 if line.intersects(polygons_list_wBound[polygon_idx]):
+            #                     intersection_point = line.intersection(polygons_list_wBound[polygon_idx].boundary)
+            #                     if intersection_point.type == 'MultiPoint':
+            #                         nearest_point = min(intersection_point.geoms,
+            #                                             key=lambda point: drone_ctr.distance(point))
+            #                     else:
+            #                         nearest_point = intersection_point
+            #                     intersection_point_list.append(nearest_point)
+            #                     distance = drone_ctr.distance(nearest_point)
+            #                     # min_distance = min(min_distance, distance)
+            #                     if distance < min_distance:
+            #                         min_distance = distance
+            #                         min_intersection_pt = nearest_point
+            #             else:  # possible intersection is not a polygon but a LineString, intersection with boundaries
+            #                 if line.intersects(polygons_list_wBound[polygon_idx]):
+            #                     intersection = line.intersection(polygons_list_wBound[polygon_idx])
+            #                     if intersection.geom_type == 'Point':
+            #                         intersection_distance = intersection.distance(drone_ctr)
+            #                         if intersection_distance < min_distance:
+            #                             min_distance = intersection_distance
+            #                             min_intersection_pt = intersection
+            #                     # If it's a line of intersection, add each end points of the intersection line
+            #                     elif intersection.geom_type == 'LineString':
+            #                         for point in intersection.coords:  # loop through both end of the intersection line
+            #                             one_end_of_intersection_line = Point(point)
+            #                             intersection_distance = one_end_of_intersection_line.distance(drone_ctr)
+            #                             if intersection_distance < min_distance:
+            #                                 min_distance = intersection_distance
+            #                                 min_intersection_pt = one_end_of_intersection_line
+            #                     intersection_point_list.append(min_intersection_pt)
+            #
+            #         # make sure each look there are only one minimum intersection point
+            #         distances.append([min_distance, building_nearest_flag])
+            #         mini_intersection_list.append(min_intersection_pt)
+            #     else:
+            #         # If no intersections, the distance is the length of the line segment
+            #         distances.append([line.length, building_nearest_flag])
+            #     # ------ end of check intersection on polygon or boundaries ------
+            #
+            #     # Now we compare the minimum distance of intersection for both polygons and drones
+            #     # whichever is short, we will load into the last list.
+            #     # distances.append([line.length, building_nearest_flag])  # use this for we don't consider obstacles
+            #
+            #     if drone_min_dist < min_distance:   # one of the other drone is nearer to cur drone
+            #         # replace the minimum distance and minimum intersection point
+            #         if len(distances) == 0:
+            #             distances.append([drone_min_dist, drone_nearest_flag])
+            #         else:
+            #             distances[-1] = [drone_min_dist, drone_nearest_flag]
+            #         if len(mini_intersection_list) == 0:  # if no building polygon surrounding the host drone, mini_intersection_list will not be populated
+            #             mini_intersection_list.append(drone_nearest_pt)
+            #         else:
+            #             mini_intersection_list[-1] = drone_nearest_pt
+            #
+            # all_agent_ed_pos.append(ed_points)
+            # all_agent_intersection_point_list.append(intersection_point_list)  # this is to save all intersection point for each agent
+            # all_agent_line_collection.append(line_collection)
+            # all_agent_mini_intersection_list.append(mini_intersection_list)
+            # self.all_agents[agentIdx].observableSpace = distances
+            #endregion  end of create radar --------------- #
+
+            #region start of create radar only used for buildings no boundary, and return building block's x,y, coord
+            # drone_ctr = Point(agent.pos)
+            # # current pos normalized
+            # norm_pos = self.normalizer.nmlz_pos([agent.pos[0], agent.pos[1]])
+            # # Re-calculate the 20 equally spaced points around the circle
+            # # use centre point as start point
+            # st_points = {degree: drone_ctr for degree in range(0, 360, 20)}
+            # all_agent_st_pos.append(st_points)
+            #
+            # radar_dist = (agent.detectionRange / 2)
+            #
+            # polygons_list_wBound = self.list_of_occupied_grid_wBound
+            # polygons_tree_wBound = self.allbuildingSTR_wBound
+            #
+            # distances = []
+            # radar_info = []
+            # intersection_point_list = []  # the current radar prob may have multiple intersections points with other geometries
+            # mini_intersection_list = []  # only record the intersection point that is nearest to the drone's centre
+            # ed_points = {}
+            # line_collection = []  # a collection of all 20 radar's prob
+            # for point_deg, point_pos in st_points.items():
+            #     # Create a line segment from the circle's center
+            #     end_x = drone_ctr.x + radar_dist * math.cos(math.radians(point_deg))
+            #     end_y = drone_ctr.y + radar_dist * math.sin(math.radians(point_deg))
+            #
+            #     end_point = Point(end_x, end_y)
+            #
+            #     # current radar prob heading
+            #     cur_prob_heading = math.atan2(end_y-agent.pos[1], end_x-agent.pos[0])
+            #
+            #     ed_points[point_deg] = end_point
+            #     min_intersection_pt = end_point
+            #
+            #     # Create the LineString from the start point to the end point
+            #     line = LineString([point_pos, end_point])
+            #     line_collection.append(line)
+            #     possible_interaction = polygons_tree_wBound.query(line)
+            #     # Check if the LineString intersects with the circle
+            #     shortest_dist = math.inf  # initialize shortest distance
+            #     sensed_shortest_dist = line.length  # initialize actual prob distance
+            #     distances.append(line.length)
+            #     if len(possible_interaction) != 0:  # check if a list is empty
+            #         building_nearest_flag = 1
+            #         # Initialize the minimum distance to be the length of the line segment
+            #         for polygon_idx in possible_interaction:
+            #             # Check if the line intersects with the building polygon's boundary
+            #             if polygons_list_wBound[polygon_idx].geom_type == "Polygon":
+            #                 if line.intersects(polygons_list_wBound[polygon_idx]):
+            #                     with warnings.catch_warnings():
+            #                         warnings.simplefilter('ignore', category=RuntimeWarning)
+            #                         intersection_point = line.intersection(polygons_list_wBound[polygon_idx].boundary)
+            #                     if intersection_point.geom_type == 'MultiPoint':
+            #                         nearest_point = min(intersection_point.geoms,
+            #                                             key=lambda point: drone_ctr.distance(point))
+            #                     else:
+            #                         nearest_point = intersection_point
+            #                     intersection_point_list.append(nearest_point)
+            #                     sensed_shortest_dist = drone_ctr.distance(nearest_point)
+            #                     if sensed_shortest_dist < shortest_dist:
+            #                         shortest_dist = sensed_shortest_dist
+            #                         min_intersection_pt = nearest_point
+            #                         end_point = min_intersection_pt
+            #                         # intersection_obstacle_centroid = polygons_list_wBound[polygon_idx].centroid
+            #                         # norm_intersection_obstacle_centroid = self.normalizer.nmlz_pos([intersection_obstacle_centroid.x, intersection_obstacle_centroid.y])
+            #                         # norm_intersection_delta_pos = norm_pos - norm_intersection_obstacle_centroid
+            #                         norm_intersection_obstacle = self.normalizer.nmlz_pos([min_intersection_pt.x, min_intersection_pt.y])
+            #                         norm_intersection_delta_pos = norm_pos - norm_intersection_obstacle
+            #             else:  # possible intersection is not a polygon but a LineString, meaning it is a boundary line
+            #                 if line.intersects(polygons_list_wBound[polygon_idx]):
+            #                     with warnings.catch_warnings():
+            #                         warnings.simplefilter('ignore', category=RuntimeWarning)
+            #                         intersection = line.intersection(polygons_list_wBound[polygon_idx])
+            #                     if intersection.geom_type == 'Point':
+            #                         sensed_shortest_dist = intersection.distance(drone_ctr)
+            #                         if sensed_shortest_dist < shortest_dist:
+            #                             shortest_dist = sensed_shortest_dist
+            #                             min_intersection_pt = intersection
+            #                             end_point = min_intersection_pt
+            #                             # if the radar prob intersects with the boundary line, this is a special type of obstacle, we just store the coordinates of the intersection point.
+            #                             intersection_obstacle_centroid = min_intersection_pt
+            #                             norm_intersection_obstacle_centroid = self.normalizer.nmlz_pos(
+            #                                 [intersection_obstacle_centroid.x, intersection_obstacle_centroid.y])
+            #                             norm_intersection_delta_pos = norm_pos - norm_intersection_obstacle_centroid
+            #                     # If it's a line of intersection, add each end points of the intersection line
+            #                     elif intersection.geom_type == 'LineString':
+            #                         for point in intersection.coords:  # loop through both end of the intersection line
+            #                             one_end_of_intersection_line = Point(point)
+            #                             sensed_shortest_dist = one_end_of_intersection_line.distance(drone_ctr)
+            #                             if sensed_shortest_dist < shortest_dist:
+            #                                 shortest_dist = sensed_shortest_dist
+            #                                 min_intersection_pt = one_end_of_intersection_line
+            #                                 end_point = min_intersection_pt
+            #                                 # if the radar prob intersects with the boundary line, this is a special type of obstacle, we just store the coordinates of the intersection point.
+            #                                 intersection_obstacle_centroid = min_intersection_pt
+            #                                 norm_intersection_obstacle_centroid = self.normalizer.nmlz_pos(
+            #                                     [intersection_obstacle_centroid.x, intersection_obstacle_centroid.y])
+            #                                 norm_intersection_delta_pos = norm_pos - norm_intersection_obstacle_centroid
+            #                     intersection_point_list.append(min_intersection_pt)
+            #
+            #         # make sure each look there are only one minimum intersection point
+            #         distances[-1] = sensed_shortest_dist
+            #         mini_intersection_list.append(min_intersection_pt)
+            #     else:
+            #         # If no intersections, the distance is the length of the line segment
+            #         distances[-1] = line.length
+            #         mini_intersection_list.append(min_intersection_pt)
+            #         norm_intersection_obstacle_centroid = np.array([-2, -2])
+            #         norm_intersection_delta_pos = np.array([-2, -2])
+            #     # radar_info.append(norm_intersection_obstacle_centroid[0])
+            #     radar_info.append(norm_intersection_delta_pos[0])
+            #     # radar_info.append(norm_intersection_obstacle_centroid[1])
+            #     radar_info.append(norm_intersection_delta_pos[1])
+            #     self.all_agents[agentIdx].probe_line[point_deg] = LineString([point_pos, end_point])
+            # all_agent_ed_pos.append(ed_points)
+            # all_agent_intersection_point_list.append(intersection_point_list)
+            # all_agent_line_collection.append(line_collection)
+            # all_agent_mini_intersection_list.append(mini_intersection_list)
+            # # self.all_agents[agentIdx].observableSpace = np.array(distances)
+            # self.all_agents[agentIdx].observableSpace = np.array(radar_info)
+
+            #endregion end of create radar only used for buildings no boundary, and return building block's x,y, coord
+
+            #region  ---- start of radar creation (only detect surrounding obstacles) ----
             drone_ctr = Point(agent.pos)
 
             # Re-calculate the 20 equally spaced points around the circle
@@ -1266,8 +1227,8 @@ class env_simulator:
             polygons_list_wBound = self.list_of_occupied_grid_wBound
             polygons_tree_wBound = self.allbuildingSTR_wBound
 
-            distances = {}
-            radar_info = {}
+            distances = []
+            radar_info = []
             intersection_point_list = []  # the current radar prob may have multiple intersections points with other geometries
             mini_intersection_list = []  # only record the intersection point that is nearest to the drone's centre
             ed_points = {}
@@ -1276,150 +1237,76 @@ class env_simulator:
                 # Create a line segment from the circle's center
                 end_x = drone_ctr.x + radar_dist * math.cos(math.radians(point_deg))
                 end_y = drone_ctr.y + radar_dist * math.sin(math.radians(point_deg))
+
                 end_point = Point(end_x, end_y)
 
-                # current radar prob heading  # same as point-deg???
+                # current radar prob heading
                 cur_prob_heading = math.atan2(end_y-agent.pos[1], end_x-agent.pos[0])
 
-                # Create the LineString from the start point to the end point
-                cur_host_line = LineString([point_pos, end_point])
-                line_collection.append(cur_host_line)
-
-                # initialize minimum intersection point with end_point
                 ed_points[point_deg] = end_point
                 min_intersection_pt = end_point
-                sensed_shortest_dist = cur_host_line.length
-                distances[point_deg] = sensed_shortest_dist
+                drone_perimeter_point = end_point
 
-                # # check if line intersect with any boundaries
-                # for i, line in enumerate(self.boundaries):
-                #     if cur_host_line.intersects(line):
-                #         intersection_point = cur_host_line.intersection(line)
-                #         dist_to_intersection = LineString([point_pos, intersection_point]).length
-                #         if dist_to_intersection < sensed_shortest_dist:
-                #             # update global minimum end point and distance
-                #             ed_points[point_deg] = intersection_point
-                #             min_intersection_pt = intersection_point
-                #             sensed_shortest_dist = dist_to_intersection
-                #             distances[point_deg] = sensed_shortest_dist
-
-                # check if line intersect with any obstacles or boundaries
-                possible_interaction = polygons_tree_wBound.query(cur_host_line)
+                # Create the LineString from the start point to the end point
+                line = LineString([point_pos, end_point])
+                line_collection.append(line)
+                possible_interaction = polygons_tree_wBound.query(line)
+                # Check if the LineString intersects with the circle
+                shortest_dist = math.inf  # initialize shortest distance
+                sensed_shortest_dist = line.length  # initialize actual prob distance
+                distances.append(line.length)
                 if len(possible_interaction) != 0:  # check if a list is empty
-                    nearest_point = end_point
+                    building_nearest_flag = 1
+                    # Initialize the minimum distance to be the length of the line segment
                     for polygon_idx in possible_interaction:
                         # Check if the line intersects with the building polygon's boundary
                         if polygons_list_wBound[polygon_idx].geom_type == "Polygon":
-                            if cur_host_line.intersects(polygons_list_wBound[polygon_idx]):
-                                intersection_point = cur_host_line.intersection(polygons_list_wBound[polygon_idx].boundary)
+                            if line.intersects(polygons_list_wBound[polygon_idx]):
+                                intersection_point = line.intersection(polygons_list_wBound[polygon_idx].boundary)
                                 if intersection_point.geom_type == 'MultiPoint':
-                                    temp_nearest_point = min(intersection_point.geoms,
+                                    nearest_point = min(intersection_point.geoms,
                                                         key=lambda point: drone_ctr.distance(point))
                                 else:
-                                    temp_nearest_point = intersection_point
-                                temp_shortest_dist = temp_nearest_point.distance(drone_ctr)
-                                if temp_shortest_dist < sensed_shortest_dist:
-                                    nearest_point = temp_nearest_point
+                                    nearest_point = intersection_point
+                                intersection_point_list.append(nearest_point)
+                                sensed_shortest_dist = drone_ctr.distance(nearest_point)
+                                if sensed_shortest_dist < shortest_dist:
+                                    shortest_dist = sensed_shortest_dist
+                                    min_intersection_pt = nearest_point
                         else:  # possible intersection is not a polygon but a LineString, meaning it is a boundary line
-                            if cur_host_line.intersects(polygons_list_wBound[polygon_idx]):
-                                intersection = cur_host_line.intersection(polygons_list_wBound[polygon_idx])
+                            if line.intersects(polygons_list_wBound[polygon_idx]):
+                                intersection = line.intersection(polygons_list_wBound[polygon_idx])
                                 if intersection.geom_type == 'Point':
-                                    temp_shortest_dist = intersection.distance(drone_ctr)
-                                    if temp_shortest_dist < sensed_shortest_dist:
-                                        nearest_point = intersection
+                                    sensed_shortest_dist = intersection.distance(drone_ctr)
+                                    if sensed_shortest_dist < shortest_dist:
+                                        shortest_dist = sensed_shortest_dist
+                                        min_intersection_pt = intersection
                                 # If it's a line of intersection, add each end points of the intersection line
                                 elif intersection.geom_type == 'LineString':
                                     for point in intersection.coords:  # loop through both end of the intersection line
                                         one_end_of_intersection_line = Point(point)
-                                        temp_shortest_dist = one_end_of_intersection_line.distance(drone_ctr)
-                                        if temp_shortest_dist < sensed_shortest_dist:
-                                            nearest_point = one_end_of_intersection_line
-                    # update global minimum end point and distance
-                    ed_points[point_deg] = nearest_point
-                    min_intersection_pt = nearest_point
-                    sensed_shortest_dist = min_intersection_pt.distance(drone_ctr)
-                    distances[point_deg] = sensed_shortest_dist
+                                        sensed_shortest_dist = one_end_of_intersection_line.distance(drone_ctr)
+                                        if sensed_shortest_dist < shortest_dist:
+                                            shortest_dist = sensed_shortest_dist
+                                            min_intersection_pt = one_end_of_intersection_line
+                                intersection_point_list.append(min_intersection_pt)
 
-
-
-                # check if line intersect with any clouds
-                # initialize cloud context nearest nearest distance and point
-                cloud_nearest_intersection_point = None
-                cloud_nearest_distance = math.inf
-                if self.cloud_config is not None:
-                    for cloud_obj in self.cloud_config:
-                        clound_boundary = cloud_obj.cloud_actual_cur_shape.boundary
-                        if cur_host_line.intersects(clound_boundary):
-                            cloud_intersection_points = cur_host_line.intersection(clound_boundary)
-                            if cloud_intersection_points.geom_type == 'MultiPoint':
-                                for point in cloud_intersection_points.geoms:
-                                    distance = LineString([point_pos, point]).length
-                                    if distance < cloud_nearest_distance:
-                                        cloud_nearest_distance = distance
-                                        cloud_nearest_intersection_point = point
-                            elif cloud_intersection_points.geom_type == 'Point':
-                                distance = LineString([point_pos, cloud_intersection_points]).length
-                                if distance < cloud_nearest_distance:
-                                    cloud_nearest_distance = distance
-                                    cloud_nearest_intersection_point = cloud_intersection_points
-
-                    # now compare the nearest distance in cloud context with the nearest distance in previous shortest
-                    if cloud_nearest_distance < sensed_shortest_dist:
-                        # update global minimum end point and distance
-                        ed_points[point_deg] = cloud_nearest_intersection_point
-                        min_intersection_pt = cloud_nearest_intersection_point
-                        sensed_shortest_dist = cloud_nearest_distance
-                        distances[point_deg] = sensed_shortest_dist
-
-                # ---- start check if the radar line intersect any other AC ------ #
-                if include_other_AC:
-                    AC_nearest_intersection_point = None
-                    AC_nearest_distance = math.inf
-                    for other_agents_idx, others in self.all_agents.items():
-                        if other_agents_idx == agentIdx:
-                            continue
-                        # During evaluation of fixed AR, we ignore the probe for AC that has not spawned
-                        if args.mode == 'eval' and evaluation_by_fixed_ar == True:
-                            if others.eta != None or others.reach_target==True:
-                                continue
-                        other_circle = Point(others.pos).buffer(agent.protectiveBound)
-                        other_circle_boundary = other_circle.boundary
-                        if cur_host_line.intersects(other_circle_boundary):
-                            AC_intersection_points = cur_host_line.intersection(other_circle_boundary)
-                            if AC_intersection_points.geom_type == 'MultiPoint':
-                                for point in AC_intersection_points.geoms:
-                                    distance = LineString([point_pos, point]).length
-                                    if distance < AC_nearest_distance:
-                                        AC_nearest_distance = distance
-                                        AC_nearest_intersection_point = point
-                            elif AC_intersection_points.geom_type == 'Point':
-                                distance = LineString([point_pos, AC_intersection_points]).length
-                                if distance < AC_nearest_distance:
-                                    AC_nearest_distance = distance
-                                    AC_nearest_intersection_point = AC_intersection_points
-
-                        # now compare the nearest distance in AC context with the nearest distance in previous shortest
-                        if AC_nearest_distance < sensed_shortest_dist:
-                            # update global minimum end point and distance
-                            ed_points[point_deg] = AC_nearest_intersection_point
-                            min_intersection_pt = AC_nearest_intersection_point
-                            sensed_shortest_dist = AC_nearest_distance
-                            distances[point_deg] = sensed_shortest_dist
-                # ---- end of check if the radar line intersect any other AC ------ #
-
-
-                # all condition have check new we fill in the radar data
-                radar_info[point_deg] = [min_intersection_pt, sensed_shortest_dist]
+                    # make sure each look there are only one minimum intersection point
+                    distances[-1] = sensed_shortest_dist
+                    mini_intersection_list.append(min_intersection_pt)
+                else:
+                    # If no intersections, the distance is the length of the line segment
+                    distances[-1] = line.length
+                    mini_intersection_list.append(min_intersection_pt)
+                radar_info.append(sensed_shortest_dist)
+                radar_info.append(cur_prob_heading)
             all_agent_ed_pos.append(ed_points)
             all_agent_intersection_point_list.append(intersection_point_list)
             all_agent_line_collection.append(line_collection)
             all_agent_mini_intersection_list.append(mini_intersection_list)
-            
-            radar_distance_list = [value for value in distances.values()]
-            
-            self.all_agents[agentIdx].observableSpace = np.array(radar_distance_list)
-            self.all_agents[agentIdx].probe_line = radar_info
-            # endregion ---- end of radar creation (only detect cloud) ----
+            self.all_agents[agentIdx].observableSpace = np.array(distances)
+            # self.all_agents[agentIdx].observableSpace = np.array(radar_info)
+            #endregion ---- end of radar creation (only detect surrounding obstacles) ----
 
             # -------- normalize radar reading by its maximum range -----
             # for ea_dist_idx, ea_dist in enumerate(self.all_agents[agentIdx].observableSpace):
@@ -1429,18 +1316,184 @@ class env_simulator:
 
             rest_compu_time = time.time()
 
+            host_current_point = Point(agent.pos[0], agent.pos[1])
+            cross_err_distance, x_error, y_error, nearest_pt = self.cross_track_error(host_current_point,
+                                                                          agent.ref_line)  # deviation from the reference line, cross track error
+            norm_cross_track_deviation_x = x_error * self.normalizer.x_scale
+            norm_cross_track_deviation_y = y_error * self.normalizer.y_scale
+
+            # no_norm_cross = np.array([x_error, y_error])
+            norm_cross = np.array([norm_cross_track_deviation_x, norm_cross_track_deviation_y])
+
+            # ----- discrete the ref line --------------
+            if agent.pre_pos is None:
+                cur_heading_rad = agent.heading
+            else:
+                cur_heading_rad = math.atan2(agent.pos[1]-agent.pre_pos[1], agent.pos[0]-agent.pre_pos[0])
+
+            host_detection_circle = host_current_point.buffer(agent.detectionRange / 2)
+
+            point_b = nearest_points(agent.ref_line, host_current_point)[0]  # [0] meaning return must be nearer to the 1st input variable
+            dist_to_b = agent.ref_line.project(point_b)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
+                line_within_circle = agent.ref_line.intersection(host_detection_circle)
+            if line_within_circle.length == 0:
+                # If there is no intersection, we determine whether this drone is on the left or right of the nearest line segment
+                # Identify the closest segment to the nearest point on the line
+                segments = list(zip(agent.ref_line.coords[:-1], agent.ref_line.coords[1:]))
+                closest_segment = min(segments, key=lambda seg: LineString(seg).distance(point_b))
+                # Calculate the side using cross product logic
+                A = closest_segment[0]
+                B = closest_segment[1]
+                C = (agent.pos[0], agent.pos[1])
+                # Compute the cross product
+                cross_product = (B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0])
+                if cross_product > 0:  # on left of the closest line segment
+                    points_spread = [-2 for _ in range(20)]
+                elif cross_product < 0:  # on the right of the closest line segment
+                    points_spread = [2 for _ in range(20)]
+                else:
+                    points_spread = [0 for _ in range(20)]
+                    print("point is on the line, which has very low chance, in that case we just assign 0.")
+                ref_line_obs = points_spread
+                norm_ref_line_obs = np.array(points_spread)
+
+            else:
+                # Calculate the total distance we can spread out points from Point B
+                total_spread_distance = min(agent.detectionRange / 2, line_within_circle.length)
+                # Calculate the interval for the points
+                interval = total_spread_distance / 10
+                # Get 10 points along the LineString from Point B
+                points_spread = [line_within_circle.interpolate(dist_to_b + interval * i) for i in range(1, 11)]
+                # For demonstration, return the coordinates of the points
+                ref_line_obs = [coord for point in points_spread for coord in point.coords[0]]
+                # we normalize these ref_line_coordinates
+                norm_ref_line_obs = np.array(
+                    [norm_coo for point in points_spread for norm_coo in self.normalizer.scale_pos(point.coords[0])])
+
+            # ----- end of discrete the ref line --------------
+
+            # ------ find nearest neighbour ------
+            # loop through neighbors from current time step, and search for the nearest neighbour and its neigh_keys
+            nearest_neigh_key = None
+            shortest_neigh_dist = math.inf
+            for neigh_keys in self.all_agents[agentIdx].surroundingNeighbor:
+                # ----- start of make nei invis when neigh reached their goal -----
+                # check if this drone reached their goal yet
+                nei_cur_circle = Point(self.all_agents[neigh_keys].pos[0],
+                                            self.all_agents[neigh_keys].pos[1]).buffer(self.all_agents[neigh_keys].protectiveBound)
+
+                nei_tar_circle = Point(self.all_agents[neigh_keys].goal[-1]).buffer(1,
+                                                                               cap_style='round')  # set to [-1] so there are no more reference path
+                # when there is no intersection between two geometries, "RuntimeWarning" will appear
+                # RuntimeWarning is, "invalid value encountered in intersection"
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', category=RuntimeWarning)
+                    nei_goal_intersect = nei_cur_circle.intersection(nei_tar_circle)
+                # if not nei_goal_intersect.is_empty:  # current neigh has reached their goal  # this will affect the drone's state space observation do note of this.
+                #     continue  # straight away pass this neigh which has already reached.
+
+                # ----- end of make nei invis when neigh reached their goal -----
+                # get distance from host to all the surrounding vehicles
+                diff_dist_vec = agent.pos - self.all_agents[neigh_keys].pos  # host pos vector - intruder pos vector
+                euclidean_dist_diff = np.linalg.norm(diff_dist_vec)
+                if euclidean_dist_diff < shortest_neigh_dist:
+                    shortest_neigh_dist = euclidean_dist_diff
+                    nearest_neigh_key = neigh_keys
+
+            if nearest_neigh_key == None:
+                nearest_neigh_pos = [-2, -2]
+                norm_nearest_neigh_pos = nearest_neigh_pos
+                delta_nei = nearest_neigh_pos
+                norm_delta_nei = np.array(nearest_neigh_pos)
+                nearest_neigh_vel = nearest_neigh_pos
+                norm_nearest_neigh_vel = nearest_neigh_pos
+            else:
+                nearest_neigh_pos = self.all_agents[nearest_neigh_key].pos
+                norm_nearest_neigh_pos = self.normalizer.nmlz_pos(nearest_neigh_pos)
+                delta_nei = nearest_neigh_pos - agent.pos
+                norm_delta_nei = norm_nearest_neigh_pos - self.normalizer.nmlz_pos([agent.pos[0], agent.pos[1]])
+                nearest_neigh_vel = self.all_agents[nearest_neigh_key].vel
+                norm_nearest_neigh_vel = self.normalizer.norm_scale(
+                    [nearest_neigh_vel[0], nearest_neigh_vel[1]])  # normalization using scale
+
+            # ------- end if find nearest neighbour ------
+
+            # norm_pos = self.normalizer.scale_pos([agent.pos[0], agent.pos[1]])
             norm_pos = self.normalizer.nmlz_pos([agent.pos[0], agent.pos[1]])
 
+            # norm_vel = self.normalizer.norm_scale([agent.vel[0], agent.vel[1]])  # normalization using scale
             norm_vel = self.normalizer.nmlz_vel([agent.vel[0], agent.vel[1]])  # normalization using min_max
 
+            # norm_acc = self.normalizer.norm_scale([agent.acc[0], agent.acc[1]])
             norm_acc = self.normalizer.nmlz_acc([agent.acc[0], agent.acc[1]])  # norm using min_max
 
             norm_G = self.normalizer.nmlz_pos([agent.goal[-1][0], agent.goal[-1][1]])
             norm_deltaG = norm_G - norm_pos  # drone's position relative to goal, so is like treat goal as the origin.
 
             norm_seg = self.normalizer.nmlz_pos([agent.goal[0][0], agent.goal[0][1]])
+            norm_delta_segG = norm_seg - norm_pos
 
-            # below is ued for p3, when we need attention mechanism in our code.
+            # agent_own = np.array([agent.vel[0], agent.vel[1], agent.acc[0], agent.acc[1],
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1]])
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1], agent.acc[0], agent.acc[1],
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1],
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1], x_error, y_error,
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1], x_error, y_error,
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], nearest_neigh_pos[0],
+            #                       nearest_neigh_pos[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1], x_error, y_error,
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], delta_nei[0], delta_nei[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1], x_error, y_error,
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], delta_nei[0], delta_nei[1],
+            #                       nearest_neigh_vel[0], nearest_neigh_vel[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1]]+ref_line_obs+
+            #                       [agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1]])
+
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1],
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1],
+            #                       agent.goal[0][0]-agent.pos[0], agent.goal[0][1]-agent.pos[1]])
+
+            # agent_own = np.array([agent.vel[0], agent.vel[1],
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1]])
+
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_deltaG], axis=0)
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_cross, norm_deltaG], axis=0)
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_cross, norm_deltaG, norm_nearest_neigh_pos], axis=0)
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_cross, norm_deltaG, norm_delta_nei], axis=0)
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_cross, norm_deltaG, norm_delta_nei, norm_nearest_neigh_vel], axis=0)
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_ref_line_obs, norm_deltaG], axis=0)
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_acc, norm_deltaG], axis=0)
+            # norm_agent_own = np.concatenate([norm_vel, norm_acc, norm_deltaG], axis=0)
+
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_deltaG, norm_delta_segG], axis=0)
+            # norm_agent_own = np.concatenate([norm_vel, norm_deltaG], axis=0)
+
+            # ---------- based on 1 Dec 2023, add obs for ref line -----------
+            # host_current_point = Point(agent.pos[0], agent.pos[1])
+            # cross_err_distance, x_error, y_error = self.cross_track_error(host_current_point, agent.ref_line)  # deviation from the reference line, cross track error
+            # norm_cross_track_deviation_x = x_error * self.normalizer.x_scale
+            # norm_cross_track_deviation_y = y_error * self.normalizer.y_scale
+            #
+            # agent_own = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1],
+            #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], x_error, y_error, cross_err_distance])
+            #
+            # combine_normXY = math.sqrt(norm_cross_track_deviation_x**2 + norm_cross_track_deviation_y**2)
+            # norm_cross = np.array([norm_cross_track_deviation_x, norm_cross_track_deviation_y, combine_normXY])
+            #
+            # norm_agent_own = np.concatenate([norm_pos, norm_vel, norm_deltaG, norm_cross], axis=0)
+            # ---------- end of based on 1 Dec 2023, add obs for ref line -----------
+
             other_agents = []
             norm_other_agents = []
             p1_other_agents = []
@@ -1546,13 +1599,8 @@ class env_simulator:
                         p1_other_agents.append(p1_surround_agent)
                         p1_norm_other_agents.append(p1_norm_surround_agent)
                         # p2_just_euclidean_delta.append(euclidean_dist)
-                        if use_nearestN_neigh_wRadar:
-                            if len(p2_just_neighbour) < N_neigh:
-                                p2_just_neighbour.append(p1_surround_agent)
-                                p2_norm_just_neighbour.append(p1_norm_surround_agent)
-                        else:
-                            p2_just_neighbour.append(p1_surround_agent)
-                            p2_norm_just_neighbour.append(p1_norm_surround_agent)
+                        p2_just_neighbour.append(p1_surround_agent)
+                        p2_norm_just_neighbour.append(p1_norm_surround_agent)
                         include_neigh_count = include_neigh_count + 1
                         # if include_neigh_count > 0:  # only include 2 nearest agents
                         #     break
@@ -1669,7 +1717,7 @@ class env_simulator:
         norm_overall.append(norm_overall_state_p2_radar)
         norm_overall.append(norm_overall_state_p3)
         # print("rest compute time is {} milliseconds".format((time.time() - rest_compu_time) * 1000))
-        return overall, norm_overall, polygons_list_wBound, all_agent_st_pos, all_agent_ed_pos, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record
+        return overall, norm_overall, polygons_list_wBound, all_agent_st_pos, all_agent_ed_pos, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list
 
     def cur_state_norm_state_fully_observable(self, agentRefer_dict):
         overall = []
@@ -2980,7 +3028,6 @@ class env_simulator:
         y_bottom_bound = LineString([(-9999, self.bound[2]), (9999, self.bound[2])])
         y_top_bound = LineString([(-9999, self.bound[3]), (9999, self.bound[3])])
         dist_to_goal = 0  # initialize
-
         for drone_idx, drone_obj in self.all_agents.items():
             host_current_circle = Point(self.all_agents[drone_idx].pos[0], self.all_agents[drone_idx].pos[1]).buffer(
                 self.all_agents[drone_idx].protectiveBound)
@@ -2990,7 +3037,6 @@ class env_simulator:
                 goal_cur_intru_intersect = host_current_circle.intersection(tar_circle)
             if not goal_cur_intru_intersect.is_empty:
                 drone_obj.reach_target = True
-
 
         for drone_idx, drone_obj in self.all_agents.items():
             if xy[0] is not None and xy[1] is not None and drone_idx > 0:
@@ -3093,7 +3139,12 @@ class env_simulator:
                 # get distance from host to all the surrounding vehicles
                 diff_dist_vec = drone_obj.pos - self.all_agents[neigh_keys].pos  # host pos vector - intruder pos vector
                 euclidean_dist_diff = np.linalg.norm(diff_dist_vec)
-                all_neigh_dist.append(euclidean_dist_diff)
+
+
+                if self.all_agents[neigh_keys].reach_target == True or drone_obj.reach_target == True:
+                    euclidean_dist_diff = math.inf
+                else:
+                    all_neigh_dist.append(euclidean_dist_diff)
 
                 if euclidean_dist_diff < shortest_neigh_dist:
                     shortest_neigh_dist = euclidean_dist_diff
@@ -3107,12 +3158,12 @@ class env_simulator:
                                                                    self.all_agents[neigh_keys].pos[1])
                         if self.all_agents[neigh_keys].drone_collision == True \
                                 or self.all_agents[neigh_keys].building_collision == True \
+                                or self.all_agents[neigh_keys].reach_target == True \
+                                or drone_obj.reach_target == True \
+                                or drone_obj.building_collision == True \
+                                or drone_obj.drone_collision == True \
                                 or self.all_agents[neigh_keys].bound_collision == True:
                             continue  # pass this neigh if this neigh is at its terminal condition
-                        elif (drone_obj.drone_collision == True
-                              or drone_obj.building_collision == True
-                              or drone_obj.bound_collision == True):
-                            continue  # or the drone itself it is under terminal condition
                         else:
                             print("host drone_{} collide with drone_{} at time step {}".format(drone_idx, neigh_keys,
                                                                                                current_ts))
@@ -3330,21 +3381,27 @@ class env_simulator:
             # near_drone_penalty_coef = 1
             # near_drone_penalty_coef = 3
             # near_drone_penalty_coef = 0
-            dist_to_penalty_upperbound = 6
-            # dist_to_penalty_upperbound = 10
+            near_drone_penalty = 0
+            # dist_to_penalty_upperbound = 6
+            dist_to_penalty_upperbound = 10
             dist_to_penalty_lowerbound = 2.5
             # assume when at lowerbound, y = 1
+            all_neigh_dist.sort()
             c_drone = 1 + (dist_to_penalty_lowerbound / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound))
             m_drone = (0 - 1) / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound)
             if nearest_neigh_key is not None:
-                if shortest_neigh_dist >= dist_to_penalty_lowerbound and shortest_neigh_dist <= dist_to_penalty_upperbound:
-                    if neigh_relative_bearing >= 90.0 and neigh_relative_bearing <= 180:
-                        near_drone_penalty_coef = near_drone_penalty_coef * 2
+                for neigh_dist_idx, shortest_neigh_dist in enumerate(all_neigh_dist):
+                    if neigh_dist_idx == 2:
+                    # if neigh_dist_idx == 1:
+                        break
+                    if shortest_neigh_dist >= dist_to_penalty_lowerbound and shortest_neigh_dist <= dist_to_penalty_upperbound:
+                        if neigh_relative_bearing >= 90.0 and neigh_relative_bearing < 270:
+                            near_drone_penalty_coef = near_drone_penalty_coef * 2
+                        else:
+                            pass
+                        near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * (m_drone * shortest_neigh_dist + c_drone)
                     else:
-                        pass
-                    near_drone_penalty = near_drone_penalty_coef * (m_drone * shortest_neigh_dist + c_drone)
-                else:
-                    near_drone_penalty = near_drone_penalty_coef * 0
+                        near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * 0
             else:
                 near_drone_penalty = near_drone_penalty_coef * 0
             # -----end of near drone penalty ----------------
@@ -3488,11 +3545,10 @@ class env_simulator:
             #
             #                                                     (1-(min_dist/turningPtConst)**2))  # value from 0 ~ 1.
             # turningPtConst = 12.5
-            # turningPtConst = 5
-            turningPtConst = 7.5
+            turningPtConst = 5
             if turningPtConst == 12.5:
                 c = 1.25
-            elif turningPtConst == 5 or turningPtConst == 7.5:
+            elif turningPtConst == 5:
                 c = 2
             # # linear building penalty
             # makesure only when min_dist is >=0 and <= turningPtConst, then we activate this penalty
@@ -3648,735 +3704,6 @@ class env_simulator:
         return reward, done, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check
 
 
-    def ss_reward_Mar_changeskin(self, current_ts, step_reward_record, step_collision_record, xy, full_observable_critic_flag, args, evaluation_by_episode, evaluation_by_fixed_ar):
-        bound_building_check = [False] * 4
-        eps_status_holder = [{} for _ in range(len(self.all_agents))]
-        reward, done = [], []
-        agent_to_remove = []
-        one_step_reward = []
-        check_goal = [False] * len(self.all_agents)
-        # previous_ever_reached = [agent.reach_target for agent in self.all_agents.values()]
-        reward_record_idx = 0  # this is used as a list index, increase with for loop. No need go with agent index, this index is also shared by done checking
-        # crash_penalty_wall = 5
-        # crash_penalty_wall = 15
-        crash_penalty_wall = 20
-        # crash_penalty_wall = 100
-        big_crash_penalty_wall = 200
-        crash_penalty_drone = 1
-        # reach_target = 1
-        # reach_target = 5
-        reach_target = 20
-        survival_penalty = 0
-        move_after_reach = -2
-
-        potential_conflict_count = 0
-        final_goal_toadd = 0
-        fixed_domino_reward = 1
-        x_left_bound = LineString([(self.bound[0], -9999), (self.bound[0], 9999)])
-        x_right_bound = LineString([(self.bound[1], -9999), (self.bound[1], 9999)])
-        y_bottom_bound = LineString([(-9999, self.bound[2]), (9999, self.bound[2])])
-        y_top_bound = LineString([(-9999, self.bound[3]), (9999, self.bound[3])])
-        dist_to_goal = 0  # initialize
-
-        for drone_idx, drone_obj in self.all_agents.items():
-            host_current_circle = Point(self.all_agents[drone_idx].pos[0], self.all_agents[drone_idx].pos[1]).buffer(
-                self.all_agents[drone_idx].protectiveBound)
-            tar_circle = Point(self.all_agents[drone_idx].goal[-1]).buffer(1, cap_style='round')
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', category=RuntimeWarning)
-                goal_cur_intru_intersect = host_current_circle.intersection(tar_circle)
-            if not goal_cur_intru_intersect.is_empty:
-                drone_obj.reach_target = True
-
-
-        for drone_idx, drone_obj in self.all_agents.items():
-            if xy[0] is not None and xy[1] is not None and drone_idx > 0:
-                continue
-            if xy[0] is not None and xy[1] is not None:
-                drone_obj.pos = np.array([xy[0], xy[1]])
-                drone_obj.pre_pos = drone_obj.pos
-
-            if args.mode == 'eval' and evaluation_by_fixed_ar == True:
-                if drone_obj.eta is not None:
-                    if drone_obj.eta > current_ts:
-                        continue
-
-            # ------- small step penalty calculation -------
-            # no penalty if current spd is larger than drone's radius per time step.
-            # norm_rx = (drone_obj.protectiveBound*math.cos(drone_obj.heading))*self.normalizer.x_scale
-            # norm_ry = (drone_obj.protectiveBound*math.sin(drone_obj.heading))*self.normalizer.y_scale
-            # norm_r = math.sqrt(norm_rx**2 + norm_ry**2)
-
-            drone_status_record = []
-            one_agent_reward_record = []
-            # re-initialize these two list for individual agents at each time step,this is to ensure collision
-            # condition is reset for each agent at every time step
-            collision_drones = []
-            collide_building = 0
-            collide_cloud = 0
-            pc_before, pc_after = [], []
-            dist_toHost = []
-            # we assume the maximum potential conflict the current drone could have at each time step is equals
-            # to the total number of its neighbour at each time step
-            pc_max_before = len(drone_obj.pre_surroundingNeighbor)
-            pc_max_after = len(drone_obj.surroundingNeighbor)
-
-            # calculate the deviation from the reference path after an action has been taken
-            curPoint = Point(self.all_agents[drone_idx].pos)
-            if isinstance(self.all_agents[drone_idx].removed_goal, np.ndarray):
-                host_refline = LineString([self.all_agents[drone_idx].removed_goal, self.all_agents[drone_idx].goal[0]])
-            else:
-                host_refline = LineString([self.all_agents[drone_idx].ini_pos, self.all_agents[drone_idx].goal[0]])
-
-            cross_track_deviation = curPoint.distance(host_refline)  # THIS IS WRONG
-            # cross_track_deviation_x = abs(cross_track_deviation*math.cos(drone_obj.heading))
-            # cross_track_deviation_y = abs(cross_track_deviation*math.sin(drone_obj.heading))
-            # norm_cross_track_deviation_x = cross_track_deviation_x * self.normalizer.x_scale
-            # norm_cross_track_deviation_y = cross_track_deviation_y * self.normalizer.y_scale
-
-            host_pass_line = LineString([self.all_agents[drone_idx].pre_pos, self.all_agents[drone_idx].pos])
-            host_passed_volume = host_pass_line.buffer(self.all_agents[drone_idx].protectiveBound, cap_style='round')
-            host_current_circle = Point(self.all_agents[drone_idx].pos[0], self.all_agents[drone_idx].pos[1]).buffer(
-                self.all_agents[drone_idx].protectiveBound)
-            host_current_point = Point(self.all_agents[drone_idx].pos[0], self.all_agents[drone_idx].pos[1])
-
-            # loop through neighbors from current time step, and search for the nearest neighbour and its neigh_keys
-            nearest_neigh_key = None
-            immediate_collision_neigh_key = None
-            immediate_tcpa = math.inf
-            immediate_d_tcpa = math.inf
-            shortest_neigh_dist = math.inf
-            cur_total_possible_conflict = 0
-            pre_total_possible_conflict = 0
-            all_neigh_dist = []
-            neigh_relative_bearing = None
-            neigh_collision_bearing = None
-            for neigh_keys in self.all_agents[drone_idx].surroundingNeighbor:
-                # calculate current t_cpa/d_cpa
-                tcpa, d_tcpa, cur_total_possible_conflict = compute_t_cpa_d_cpa_potential_col(
-                    self.all_agents[neigh_keys].pos, drone_obj.pos, self.all_agents[neigh_keys].vel, drone_obj.vel,
-                    self.all_agents[neigh_keys].protectiveBound, drone_obj.protectiveBound, cur_total_possible_conflict)
-                # calculate previous t_cpa/d_cpa
-                pre_tcpa, pre_d_tcpa, pre_total_possible_conflict = compute_t_cpa_d_cpa_potential_col(
-                    self.all_agents[neigh_keys].pre_pos, drone_obj.pre_pos, self.all_agents[neigh_keys].pre_vel,
-                    drone_obj.pre_vel, self.all_agents[neigh_keys].protectiveBound, drone_obj.protectiveBound,
-                    pre_total_possible_conflict)
-
-                # find the neigh that has the highest collision probability at current step
-                if tcpa >= 0 and tcpa < immediate_tcpa:  # tcpa -> +ve
-                    immediate_tcpa = tcpa
-                    immediate_d_tcpa = d_tcpa
-                    immediate_collision_neigh_key = neigh_keys
-                elif tcpa == -10:  # tcpa equals to special number, -10, meaning two drone relative velocity equals to 0
-                    if d_tcpa < immediate_tcpa: # if currently relative velocity equals to 0, we move on to check their current relative distance
-                        immediate_tcpa = tcpa  # indicate current neigh has a 0 relative velocity
-                        immediate_d_tcpa = d_tcpa
-                        immediate_collision_neigh_key = neigh_keys
-                else:  # tcpa -> -ve, don't have collision risk, no need to update "immediate_tcpa"
-                    pass
-
-                # ---- start of make nei invis when nei has reached their goal ----
-                # check if this drone reached their goal yet
-                cur_nei_circle = Point(self.all_agents[neigh_keys].pos[0],
-                                            self.all_agents[neigh_keys].pos[1]).buffer(self.all_agents[neigh_keys].protectiveBound)
-
-                cur_nei_tar_circle = Point(self.all_agents[neigh_keys].goal[-1]).buffer(1,
-                                                                               cap_style='round')  # set to [-1] so there are no more reference path
-                # when there is no intersection between two geometries, "RuntimeWarning" will appear
-                # RuntimeWarning is, "invalid value encountered in intersection"
-                with warnings.catch_warnings():
-                    warnings.simplefilter('ignore', category=RuntimeWarning)
-                    neigh_goal_intersect = cur_nei_circle.intersection(cur_nei_tar_circle)
-                if args.mode == 'eval' and evaluation_by_episode == False:
-                    if not neigh_goal_intersect.is_empty:  # current neigh has reached their goal
-                        continue  # straight away pass this neigh which has already reached.
-
-                # ---- end of make nei invis when nei has reached their goal ----
-
-                # get distance from host to all the surrounding vehicles
-                diff_dist_vec = drone_obj.pos - self.all_agents[neigh_keys].pos  # host pos vector - intruder pos vector
-                euclidean_dist_diff = np.linalg.norm(diff_dist_vec)
-                all_neigh_dist.append(euclidean_dist_diff)
-
-                if euclidean_dist_diff < shortest_neigh_dist:
-                    shortest_neigh_dist = euclidean_dist_diff
-                    neigh_relative_bearing = calculate_bearing(drone_obj.pos[0], drone_obj.pos[1],
-                                                               self.all_agents[neigh_keys].pos[0], self.all_agents[neigh_keys].pos[1])
-                    nearest_neigh_key = neigh_keys
-                if np.linalg.norm(diff_dist_vec) <= drone_obj.protectiveBound * 2:
-                    if args.mode == 'eval' and evaluation_by_fixed_ar == True:
-                        if self.all_agents[neigh_keys].eta is not None:
-                            if self.all_agents[neigh_keys].eta > current_ts:  # current_ts is less than eta, we skip this neighbour
-                                continue  # this this neigh as it is not even activated
-                    if args.mode == 'eval' and evaluation_by_episode == False:
-                        neigh_collision_bearing = calculate_bearing(drone_obj.pos[0], drone_obj.pos[1],
-                                                                   self.all_agents[neigh_keys].pos[0],
-                                                                   self.all_agents[neigh_keys].pos[1])
-                        if self.all_agents[neigh_keys].drone_collision == True \
-                                or self.all_agents[neigh_keys].building_collision == True \
-                                or self.all_agents[neigh_keys].bound_collision == True:
-                            continue  # pass this neigh if this neigh is at its terminal condition
-                        else:
-                            print("host drone_{} collide with drone_{} at time step {}".format(drone_idx, neigh_keys,
-                                                                                               current_ts))
-                            collision_drones.append(neigh_keys)
-                            drone_obj.drone_collision = True
-                            self.all_agents[neigh_keys].drone_collision = True
-                    else:
-                        if self.all_agents[neigh_keys].reach_target == True or drone_obj.reach_target==True:
-                            pass
-                        else:
-                            print("host drone_{} collide with drone_{} at time step {}".format(drone_idx, neigh_keys, current_ts))
-                            neigh_collision_bearing = calculate_bearing(drone_obj.pos[0], drone_obj.pos[1],
-                                                                       self.all_agents[neigh_keys].pos[0],
-                                                                       self.all_agents[neigh_keys].pos[1])
-                            collision_drones.append(neigh_keys)
-                            drone_obj.drone_collision = True
-            # loop over all previous step neighbour, check if the collision at current step, is done by the drones that is previous within the closest two neighbors
-            neigh_count = 0
-            flag_previous_nearest_two = 0
-            for neigh_keys in self.all_agents[drone_idx].pre_surroundingNeighbor:
-                for collided_drone_keys in collision_drones:
-                    if collided_drone_keys == neigh_keys:
-                        flag_previous_nearest_two = 1
-                        break
-                neigh_count = neigh_count + 1
-                if neigh_count > 1:
-                    break
-            
-            # check whether current actions leads to a collision with any clouds in the airspace
-            for clound in self.cloud_config:
-                # cloud_area_moved = estimated_area_swap_by_arbitary_cloud(clound)  # area swapped by cloud there is error
-                conflicting_cloud = polygons_single_cloud_conflict(host_current_circle, clound.cloud_actual_cur_shape)
-                # conflicting_cloud = polygons_single_cloud_conflict(host_circle, cloud_area_moved)
-                if drone_obj.reach_target == True:  # when current agent has reached the goal, we don't consider any cloud collision
-                    pass
-                else:
-                    if len(conflicting_cloud) > 0:
-                        collide_cloud = 1
-                        drone_obj.cloud_collision = True
-                        print("{} conflict with cloud at step {}".format(drone_obj.agent_name, current_ts))
-                        break
-
-
-            # check whether current actions leads to a collision with any buildings in the airspace
-            # -------- check collision with building V1-------------
-            start_of_v1_time = time.time()
-            v1_decision = 0
-            # possiblePoly = self.allbuildingSTR.query(host_current_circle)
-            # for element in possiblePoly:
-            #     if self.allbuildingSTR.geometries.take(element).intersection(host_current_circle):
-            #         collide_building = 1
-            #         v1_decision = collide_building
-            #         drone_obj.collide_wall_count = drone_obj.collide_wall_count + 1
-            #         drone_obj.building_collision = True
-            #         # print("drone_{} crash into building when moving from {} to {} at time step {}".format(drone_idx, self.all_agents[drone_idx].pre_pos, self.all_agents[drone_idx].pos, current_ts))
-            #         break
-            end_v1_time = (time.time() - start_of_v1_time)*1000*1000
-            # print("check building collision V1 time used is {} micro".format(end_v1_time))
-            # -----------end of check collision with building v1 ---------
-
-            end_v2_time, end_v3_time, v2_decision, v3_decision = 0, 0, 0, 0,
-            step_collision_record[drone_idx].append([end_v1_time, end_v2_time, end_v3_time,
-                                                     v1_decision, v2_decision, v3_decision])
-            # if step_collision_record[drone_idx] == None:
-            #     step_collision_record[drone_idx] = [[end_v1_time, end_v2_time, end_v3_time,
-            #                                          v1_decision, v2_decision, v3_decision]]
-            # else:
-            #     step_collision_record[drone_idx].append([end_v1_time, end_v2_time, end_v3_time,
-            #                                              v1_decision, v2_decision, v3_decision])
-
-            # tar_circle = Point(self.all_agents[drone_idx].goal[0]).buffer(1, cap_style='round')
-            tar_circle = Point(self.all_agents[drone_idx].goal[-1]).buffer(1, cap_style='round')  # set to [-1] so there are no more reference path
-            # when there is no intersection between two geometries, "RuntimeWarning" will appear
-            # RuntimeWarning is, "invalid value encountered in intersection"
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', category=RuntimeWarning)
-                goal_cur_intru_intersect = host_current_circle.intersection(tar_circle)
-
-            # wp_circle = Point(self.all_agents[drone_idx].goal[0]).buffer(1, cap_style='round')
-            # wp_circle = Point(self.all_agents[drone_idx].goal[0]).buffer(drone_obj.protectiveBound,
-            #                                                              cap_style='round')
-            # wp_circle = Point(self.all_agents[drone_idx].goal[0]).buffer(3.5, cap_style='round')
-            # wp_intersect = host_current_circle.intersection(wp_circle)
-            wp_reach_threshold_dist = 5
-            # --------------- a new way to check for the next wp --------------------
-            # smallest_dist = math.inf
-            # wp_intersect_flag = False
-            # for wpidx, wp in enumerate(self.all_agents[drone_idx].goal):
-            #     cur_dist_to_wp = curPoint.distance(Point(wp))
-            #     if cur_dist_to_wp < smallest_dist:
-            #         smallest_dist = cur_dist_to_wp
-            #         next_wp = np.array(wp)
-            #         if smallest_dist < wp_reach_threshold_dist:
-            #             wp_intersect_flag = True
-            #             # we find the next wp, as long as it is not the last wp
-            #             if len(self.all_agents[drone_idx].goal) > 1:
-            #                 drone_obj.removed_goal = drone_obj.goal.pop(wpidx)  # remove current wp
-            #                 points_list = [Point(coord) for coord in self.all_agents[drone_idx].goal]
-            #                 next_wPoint = min(points_list, key=lambda point: point.distance(curPoint))
-            #                 next_wp = np.array([next_wPoint.x, next_wPoint.y])
-            #             break  # once the nearest wp is found we break out of the loop
-            # ---------------end of a new way to check for the next wp --------------------
-
-            #  ------  using sequence wp reaching method ----------
-            cur_dist_to_wp = curPoint.distance(Point(self.all_agents[drone_idx].waypoints[0]))
-            next_wp = np.array(self.all_agents[drone_idx].waypoints[0])
-
-            if cur_dist_to_wp < wp_reach_threshold_dist:
-                wp_intersect_flag = True
-            else:
-                wp_intersect_flag = False
-            # ------ end of using sequence wp reaching method ----------
-
-            # ------------- pre-processed condition for a normal step -----------------
-            # rew = 3
-            rew = 0
-            # dist_to_goal_coeff = 1
-            # dist_to_goal_coeff = 3
-            dist_to_goal_coeff = 6
-            # dist_to_goal_coeff = 1
-            # dist_to_goal_coeff = 0
-            # dist_to_goal_coeff = 2
-
-            x_norm, y_norm = self.normalizer.nmlz_pos(drone_obj.pos)
-            tx_norm, ty_norm = self.normalizer.nmlz_pos(drone_obj.goal[-1])
-            after_dist_hg = np.linalg.norm(drone_obj.pos - drone_obj.goal[-1])  # distance to goal after action
-
-            # -- original --
-            dist_left = total_length_to_end_of_line(drone_obj.pos, drone_obj.ref_line)
-            dist_to_goal = dist_to_goal_coeff * (1 - (dist_left / drone_obj.ref_line.length))
-            # end of original --
-
-            # ---- leading to goal reward V4 ----
-            # before_dist_hg = np.linalg.norm(drone_obj.pre_pos - drone_obj.goal[-1])  # distance to goal before action
-            # # before_dist_hg = np.linalg.norm(drone_obj.pre_pos - next_wp)  # distance to goal before action
-            # after_dist_hg = np.linalg.norm(drone_obj.pos - drone_obj.goal[-1])  # distance to goal after action
-            # # after_dist_hg = np.linalg.norm(drone_obj.pos - next_wp)  # distance to goal after action
-            # dist_to_goal = dist_to_goal_coeff * (before_dist_hg - after_dist_hg)
-            # dist_to_goal = dist_to_goal / drone_obj.maxSpeed  # perform a normalization
-            # ---- end of leading to goal reward V4 ----
-
-            # ---- V5 euclidean distance ----
-            # dist_away = np.linalg.norm(drone_obj.ini_pos - drone_obj.goal[-1])
-            # after_dist_hg = np.linalg.norm(drone_obj.pos - drone_obj.goal[-1])  # distance to goal after action
-            # if after_dist_hg > dist_away:
-            #     dist_to_goal = dist_to_goal_coeff * 0
-            # else:
-            #     dist_to_goal = dist_to_goal_coeff * (1-after_dist_hg/dist_away)
-            # ---- end of V5 -------
-
-            # ----- v4 accumulative ---
-            # one_drone_dist_to_goal = dist_to_goal_coeff * (before_dist_hg - after_dist_hg)  # (before_dist_hg - after_dist_hg) -max_vel - max_vel
-            # one_drone_dist_to_goal = one_drone_dist_to_goal / drone_obj.maxSpeed  # perform a normalization
-            # dist_to_goal = dist_to_goal + one_drone_dist_to_goal
-            # ------ end of v4 accumulative----
-
-
-            # dist_left = total_length_to_end_of_line(drone_obj.pos, drone_obj.ref_line)
-            # dist_to_goal = dist_to_goal_coeff * (1 - (dist_left / drone_obj.ref_line.length))  # v1
-
-            # ---- v2 leading to goal reward, based on compute_projected_velocity ---
-            # projected_velocity = compute_projected_velocity(drone_obj.vel, drone_obj.ref_line, Point(drone_obj.pos))
-            # get the norm as the projected_velocity.
-            # dist_to_goal = dist_to_goal_coeff * np.linalg.norm(projected_velocity)
-            # ---- end of v2 leading to goal reward, based on compute_projected_velocity ---
-
-            # ---- v3 leading to goal reward, based on remained distance to travel only ---
-            # dist_left = total_length_to_end_of_line_without_cross(drone_obj.pos, drone_obj.ref_line)
-            # dist_to_goal = dist_to_goal_coeff * (1 - (dist_left / drone_obj.ref_line.length))  # v3
-            # ---- end of v3 leading to goal reward, based on remained distance to travel only ---
-
-            # if dist_to_goal > drone_obj.maxSpeed:
-            #     print("dist_to_goal reward out of range")
-
-            # ------- small segment reward ------------
-            # dist_to_seg_coeff = 10
-            # dist_to_seg_coeff = 1
-            dist_to_seg_coeff = 0
-
-            # if drone_obj.removed_goal == None:
-            #     total_delta_seg_vector = np.linalg.norm((drone_obj.ini_pos - np.array(drone_obj.goal[0])))
-            # else:
-            #     total_delta_seg_vector = np.linalg.norm((np.array(drone_obj.removed_goal) - np.array(drone_obj.goal[0])))
-            # delta_seg_vector = drone_obj.pos - drone_obj.goal[0]
-            # dist_seg_vector = np.linalg.norm(delta_seg_vector)
-            # if dist_seg_vector / total_delta_seg_vector <= 1:  # we reward the agent
-            #     seg_reward = dist_to_seg_coeff * (dist_seg_vector / total_delta_seg_vector)
-            # else:
-            #     seg_reward = dist_to_seg_coeff * (-1)*(dist_seg_vector / total_delta_seg_vector)
-
-            # s_tx_norm, s_ty_norm = self.normalizer.nmlz_pos(drone_obj.goal[0])
-            # seg_reward = dist_to_seg_coeff * math.sqrt(((x_norm-s_tx_norm)**2 + (y_norm-s_ty_norm)**2))  # 0~2.828 at each step
-            seg_reward = dist_to_seg_coeff * 0
-            # -------- end of small segment reward ----------
-
-            # dist_to_goal = 0
-            # coef_ref_line = 0.5
-            # coef_ref_line = -10
-            # coef_ref_line = 3
-            # coef_ref_line = 1
-            # coef_ref_line = 2
-            # coef_ref_line = 1.5
-            coef_ref_line = 0
-            cross_err_distance, x_error, y_error, nearest_pt = self.cross_track_error(host_current_point, drone_obj.ref_line)  # deviation from the reference line, cross track error
-            norm_cross_track_deviation_x = x_error * self.normalizer.x_scale
-            norm_cross_track_deviation_y = y_error * self.normalizer.y_scale
-            # dist_to_ref_line = coef_ref_line*math.sqrt(norm_cross_track_deviation_x ** 2 +
-            #                                            norm_cross_track_deviation_y ** 2)
-
-            if cross_err_distance <= drone_obj.protectiveBound:
-                # linear increase in reward
-                m = (0 - 1) / (drone_obj.protectiveBound - 0)
-                dist_to_ref_line = coef_ref_line*(m * cross_err_distance + 1)  # 0~1*coef_ref_line
-                # dist_to_ref_line = (coef_ref_line*(m * cross_err_distance + 1)) + coef_ref_line  # 0~1*coef_ref_line, with a fixed reward
-            else:
-                dist_to_ref_line = -coef_ref_line*1
-                # dist_to_ref_line = -coef_ref_line*3
-                # dist_to_ref_line = -coef_ref_line*0
-
-            # ------- penalty for surrounding agents as a whole -----
-            surrounding_collision_penalty = 0
-            # if pre_total_possible_conflict < cur_total_possible_conflict:
-            #     surrounding_collision_penalty = 2
-            # ------- end of reward for surrounding agents as a whole ----
-
-            # ----- start of near drone penalty ----------------
-            near_drone_penalty_coef = 10
-            # near_drone_penalty_coef = 5
-            # near_drone_penalty_coef = 1
-            # near_drone_penalty_coef = 3
-            # near_drone_penalty_coef = 0
-            dist_to_penalty_upperbound = 30  # starting to generate penalty
-            dist_to_penalty_lowerbound = 10  # penalty ends as collision happened
-            # dist_to_penalty_upperbound = 6
-            # dist_to_penalty_lowerbound = 2.5
-            # assume when at lowerbound, y = 1
-            c_drone = 1 + (dist_to_penalty_lowerbound / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound))
-            m_drone = (0 - 1) / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound)
-            if nearest_neigh_key is not None:
-                if shortest_neigh_dist >= dist_to_penalty_lowerbound and shortest_neigh_dist <= dist_to_penalty_upperbound:
-                    if neigh_relative_bearing >= 90.0 and neigh_relative_bearing <= 180:
-                        near_drone_penalty_coef = near_drone_penalty_coef * 2
-                    else:
-                        pass
-                    near_drone_penalty = near_drone_penalty_coef * (m_drone * shortest_neigh_dist + c_drone)
-                else:
-                    near_drone_penalty = near_drone_penalty_coef * 0
-            else:
-                near_drone_penalty = near_drone_penalty_coef * 0
-            # -----end of near drone penalty ----------------
-
-            # ----- start of SUM near drone penalty ----------------
-            # # near_drone_penalty_coef = 10
-            # near_drone_penalty_coef = 1
-            # # near_drone_penalty_coef = 5
-            # # near_drone_penalty_coef = 1
-            # # near_drone_penalty_coef = 3
-            # # near_drone_penalty_coef = 0
-            # # dist_to_penalty_upperbound = 6
-            # dist_to_penalty_upperbound = 10
-            # # dist_to_penalty_upperbound = 20
-            # dist_to_penalty_lowerbound = 2.5
-            # # assume when at lowerbound, y = 1
-            # near_drone_penalty = 0  # initialize
-            # c_drone = 1 + (dist_to_penalty_lowerbound / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound))
-            # m_drone = (0 - 1) / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound)
-            # if len(all_neigh_dist) == 0:
-            #     near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * 0
-            # else:
-            #     for individual_nei_dist in all_neigh_dist:
-            #         if individual_nei_dist >= dist_to_penalty_lowerbound and individual_nei_dist <= dist_to_penalty_upperbound:
-            #             # normalize distance to 0-1
-            #             norm_ind_nei_dist = (individual_nei_dist-dist_to_penalty_lowerbound) / (dist_to_penalty_upperbound-dist_to_penalty_lowerbound)
-            #             near_drone_penalty = near_drone_penalty + (norm_ind_nei_dist-1)**2
-            #         else:
-            #             near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * 0
-            #
-            #         # if individual_nei_dist >= dist_to_penalty_lowerbound and individual_nei_dist <= dist_to_penalty_upperbound:
-            #         #     near_drone_penalty = near_drone_penalty + (near_drone_penalty_coef * (m_drone * individual_nei_dist + c_drone))
-            #         # else:
-            #         #     near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * 0
-            # -----end of near SUM drone penalty ----------------
-
-            # ----- start of V2 nearest drone penalty ----------------
-            # near_drone_penalty_coef = 1
-            # dist_to_penalty_upperbound = 10
-            # dist_to_penalty_lowerbound = 2.5
-            # nearest_drone_dist = min(all_neigh_dist)
-            # if nearest_drone_dist >= dist_to_penalty_lowerbound and nearest_drone_dist <= dist_to_penalty_upperbound:
-            #     # normalize distance to 0-1
-            #     norm_ind_nei_dist = (nearest_drone_dist - dist_to_penalty_lowerbound) / (
-            #                 dist_to_penalty_upperbound - dist_to_penalty_lowerbound)
-            #     near_drone_penalty = (norm_ind_nei_dist - 1) ** 2
-            # else:
-            #     near_drone_penalty = near_drone_penalty_coef * 0
-            # -----end of V2 nearest drone penalty ----------------
-
-            # ---- start of V3 near drone penalty -------
-            # if immediate_collision_neigh_key is None:
-            #     near_drone_penalty = near_drone_penalty_coef * 0
-            # else:
-            #     if immediate_tcpa >= 0:
-            #         near_drone_penalty = near_drone_penalty_coef * math.exp(-(immediate_tcpa-1)/2)  # 10: 0~16.487
-            #     elif immediate_tcpa == -10:
-            #         near_drone_penalty = near_drone_penalty_coef * math.exp((5 - (2 * immediate_d_tcpa)) / 5)  # 10: 0~27.183
-            # ----- end of V3 near drone penalty -------
-
-
-            small_step_penalty_coef = 5
-            # small_step_penalty_coef = 0
-            spd_penalty_threshold = drone_obj.maxSpeed / 2
-            # spd_penalty_threshold = drone_obj.protectiveBound
-            small_step_penalty_val = (spd_penalty_threshold -
-                                  np.clip(np.linalg.norm(drone_obj.vel), 0, spd_penalty_threshold))*\
-                                 (1.0 / spd_penalty_threshold)  # between 0-1.
-            small_step_penalty = small_step_penalty_coef * small_step_penalty_val
-
-            # dist_moved = np.linalg.norm(drone_obj.pos - drone_obj.pre_pos)
-            # if dist_moved <= 1:
-            #     small_step_penalty = small_step_penalty_coef * 1
-            # else:
-            #     small_step_penalty = small_step_penalty_coef * 0
-
-            # near_goal_coefficient = 3  # so that near_goal_reward will become 0-3 instead of 0-1
-            near_goal_coefficient = 0
-            near_goal_threshold = drone_obj.detectionRange
-            actual_after_dist_hg = math.sqrt(((drone_obj.pos[0] - drone_obj.goal[-1][0]) ** 2 +
-                                              (drone_obj.pos[1] - drone_obj.goal[-1][1]) ** 2))
-            near_goal_reward = near_goal_coefficient * ((near_goal_threshold -
-                                np.clip(actual_after_dist_hg, 0, near_goal_threshold)) * 1.0/near_goal_threshold)
-
-            # penalty for any buildings are getting too near to the host agent
-            turningPtConst = drone_obj.detectionRange/2-drone_obj.protectiveBound  # this one should be 12.5
-            # dist_array = np.array([dist_info[0] for dist_info in drone_obj.observableSpace])  # used when radar detect other uavs
-            dist_array = np.array([dist_info for dist_info in drone_obj.observableSpace])
-
-            ascending_array = np.sort(dist_array)
-            min_index = np.argmin(dist_array)
-            min_dist = dist_array[min_index]
-            # radar_status = drone_obj.observableSpace[min_index][-1]  # radar status for now not required
-
-            # ----- non-linear building penalty ---
-            # # the distance is based on the minimum of the detected distance to surrounding buildings.
-            # # near_building_penalty_coef = 4
-            # near_building_penalty_coef = 10
-            # # near_building_penalty_coef = 3
-            # # near_building_penalty_coef = 0
-            #
-            # near_building_penalty = 0  # initialize
-            # prob_counter = 0  # initialize
-            # # turningPtConst = 12.5
-            # # turningPtConst = 5
-            # turningPtConst = 10
-            # if turningPtConst == 12.5:
-            #     c = 1.25
-            # elif turningPtConst == 5:
-            #     c = 2
-            #
-            # c = 1 + (drone_obj.protectiveBound / (turningPtConst - drone_obj.protectiveBound))
-            #
-            # for dist_idx, dist in enumerate(ascending_array):
-            #     # only consider the nearest 4 prob
-            #     if dist_idx > 3:
-            #         continue
-            #     # # linear building penalty
-            #     # makesure only when min_dist is >=0 and <= turningPtConst, then we activate this penalty
-            #     m = (0-1)/(turningPtConst-drone_obj.protectiveBound)  # we must consider drone's circle, because when min_distance is less than drone's radius, it is consider collision.
-            #     # if dist>=drone_obj.protectiveBound and dist<=turningPtConst:  # only when min_dist is between 2.5~5, this penalty is working.
-            #     #     near_building_penalty = near_building_penalty + near_building_penalty_coef*(m*dist+c)  # at each step, penalty from 3 to 0.
-            #     # else:
-            #     #     near_building_penalty = near_building_penalty + 0.0  # if min_dist is outside of the bound, other parts of the reward will be taking care.
-            #     # non-linear building penalty
-            #     if dist >= drone_obj.protectiveBound and dist <= turningPtConst:
-            #         norm_ind_nei_dist = (dist - drone_obj.protectiveBound) / (
-            #                     turningPtConst - drone_obj.protectiveBound)
-            #         near_building_penalty = near_building_penalty + near_building_penalty_coef * \
-            #                                 (1-norm_ind_nei_dist)**3
-            #     else:
-            #         near_building_penalty = near_building_penalty + 0.0
-            # --- end of non-linear building penalty ----
-
-            # ---linear building penalty ---
-            # the distance is based on the minimum of the detected distance to surrounding buildings.
-            # near_building_penalty_coef = 1
-            near_building_penalty_coef = 3
-            # near_building_penalty_coef = 0
-            # near_building_penalty = near_building_penalty_coef*((1-(1/(1+math.exp(turningPtConst-min_dist))))*
-            #
-            #                                                     (1-(min_dist/turningPtConst)**2))  # value from 0 ~ 1.
-            # turningPtConst = 12.5
-            # turningPtConst = 5  # for protectiveBound=2.5
-            turningPtConst = 7.5  # for protectiveBound=5
-            if turningPtConst == 12.5:
-                c = 1.25
-            elif turningPtConst == 5 or turningPtConst == 7.5:
-                c = 2
-            # # linear building penalty
-            # makesure only when min_dist is >=0 and <= turningPtConst, then we activate this penalty
-            m = (0-1)/(turningPtConst-drone_obj.protectiveBound)  # we must consider drone's circle, because when min_distance is less than drone's radius, it is consider collision.
-            if min_dist>=drone_obj.protectiveBound and min_dist<=turningPtConst:  # only when min_dist is between 2.5~5, this penalty is working.
-                near_building_penalty = near_building_penalty_coef*(m*min_dist+c)  # at each step, penalty from 3 to 0.
-            else:
-                near_building_penalty = 0  # if min_dist is outside of the bound, other parts of the reward will be taking care.
-            # --- end of linear building penalty ---
-
-            # -------------end of pre-processed condition for a normal step -----------------
-            #
-            # Always check the boundary as the 1st condition, or else will encounter error where the agent crash into wall but also exceed the bound, but crash into wall did not stop the episode. So, we must put the check boundary condition 1st, so that episode can terminate in time and does not leads to exceed boundary with error in no polygon found.
-            # exceed bound condition, don't use current point, use current circle or else will have condition that
-            # must use "host_passed_volume", or else, we unable to confirm whether the host's circle is at left or right of the boundary lines
-            if x_left_bound.intersects(host_passed_volume) or x_right_bound.intersects(host_passed_volume) or y_bottom_bound.intersects(host_passed_volume) or y_top_bound.intersects(host_passed_volume):
-                print("drone_{} has crash into boundary at time step {}".format(drone_idx, current_ts))
-                drone_obj.bound_collision = True
-                rew = rew - crash_penalty_wall
-                if args.mode == 'eval' and evaluation_by_episode == False:
-                    done.append(False)
-                else:  # during training or evaluation by episode is TRUE
-                    done.append(True)
-                bound_building_check[0] = True
-                # done.append(False)
-                reward.append(np.array(rew))
-            # if the drone crash into cloud
-            elif collide_cloud == 1:
-                if args.mode == 'eval' and evaluation_by_episode == False:
-                    done.append(False)
-                else:  # during training or evaluation by episode is TRUE
-                    done.append(True)
-                bound_building_check[1] = True
-                rew = rew - crash_penalty_wall
-                # rew = rew - big_crash_penalty_wall
-                reward.append(np.array(rew))
-            # # crash into buildings or crash with other neighbors
-            # elif collide_building == 1:
-            #     if args.mode == 'eval' and evaluation_by_episode == False:
-            #         done.append(False)
-            #     else:  # during training or evaluation by episode is TRUE
-            #         done.append(True)
-            #     bound_building_check[1] = True
-            #     rew = rew - crash_penalty_wall
-            #     # rew = rew - big_crash_penalty_wall
-            #     reward.append(np.array(rew))
-            # # ---------- Termination only during collision to wall on the 3rd time -----------------------
-            # elif drone_obj.collide_wall_count >0:
-            #     if drone_obj.collide_wall_count == 1:
-            #         done.append(False)
-            #         rew = rew - dist_to_ref_line - crash_penalty_wall - dist_to_goal - small_step_penalty + near_goal_reward -5
-            #         reward.append(np.array(rew))
-            #     elif drone_obj.collide_wall_count == 2:
-            #         done.append(False)
-            #         rew = rew - dist_to_ref_line - crash_penalty_wall - dist_to_goal - small_step_penalty + near_goal_reward -15
-            #         reward.append(np.array(rew))
-            #     else:
-            #         done.append(True)
-            #         rew = rew - dist_to_ref_line - crash_penalty_wall - dist_to_goal - small_step_penalty + near_goal_reward - 20
-            #         reward.append(np.array(rew))
-            # # ----------End of termination only during collision to wall on the 3rd time -----------------------
-            elif len(collision_drones) > 0:
-                if args.mode == 'eval' and evaluation_by_episode == False:
-                    done.append(False)
-                else:  # during training or evaluation by episode is TRUE
-                    done.append(True)
-                # done.append(False)
-                bound_building_check[2] = True
-                if neigh_collision_bearing >=90.0 and neigh_collision_bearing <=180:
-                    crash_penalty_wall = crash_penalty_wall * 2
-                else:
-                    pass
-                rew = rew - crash_penalty_wall
-                reward.append(np.array(rew))
-                # check if the collision is due to the nearest drone.
-                # if collision_drones[-1] == nearest_neigh_key:
-                # check if the collision is due to the previous nearest two drone.
-                if flag_previous_nearest_two:
-                    bound_building_check[3] = True
-            elif not goal_cur_intru_intersect.is_empty:  # reached goal?
-                # --------------- with way point -----------------------
-                drone_obj.reach_target = True
-                check_goal[drone_idx] = True
-
-                # print("drone_{} has reached its final goal at time step {}".format(drone_idx, current_ts))
-                agent_to_remove.append(drone_idx)  # NOTE: drone_idx is the key value.
-                rew = rew + reach_target + near_goal_reward
-                reward.append(np.array(rew))
-                done.append(False)
-                # --------------- end of with way point -----------------------
-                # without wap point
-                # rew = rew + reach_target
-                # reward.append(np.array(rew))
-                # print("final goal has reached")
-                # done.append(False)
-            else:  # a normal step taken
-                if xy[0] is None and xy[1] is None:  # we only alter drone's goal during actual training
-                    # if (not wp_intersect.is_empty) and len(drone_obj.goal) > 1: # check if wp reached, and this is not the end point
-                    if wp_intersect_flag and len(drone_obj.waypoints) > 1: # check if wp reached and don't remove last element
-                        drone_obj.removed_goal = drone_obj.waypoints.pop(0)  # remove current wp
-                        # we add a wp reached reward, this reward is equals to the maximum of the path deviation reward
-                        # rew = rew + coef_ref_line
-                        # print("drone {} has reached a WP on step {}, claim additional {} points of reward"
-                        #       .format(drone_idx, current_ts, coef_ref_line))
-                # if drone_obj.reach_target == False:
-                #     rew = rew + dist_to_ref_line + dist_to_goal - \
-                #           small_step_penalty + near_goal_reward - near_building_penalty + seg_reward-survival_penalty - near_drone_penalty
-                # else:
-                #     rew = rew + move_after_reach
-                rew = rew + dist_to_ref_line + dist_to_goal - \
-                      small_step_penalty + near_goal_reward - near_building_penalty + seg_reward \
-                      - survival_penalty - near_drone_penalty - surrounding_collision_penalty
-                # we remove the above termination condition
-                # if current_ts >= args.episode_length:
-                #     done.append(True)
-                # else:
-                #     done.append(False)
-                done.append(False)
-                step_reward = np.array(rew)
-                reward.append(step_reward)
-                # for debug, record the reward
-                # one_step_reward = [crossCoefficient*cross_track_error, delta_hg, alive_penalty, dominoCoefficient*dominoTerm_sum]
-
-                # if rew < 1:
-                #     print("check")
-            # if rew < 0.1 and rew >= 0:
-            #     print("check")
-            step_reward_record[drone_idx] = [dist_to_ref_line, rew]
-
-            # print("current drone {} actual distance to goal is {}, current reward is {}".format(drone_idx, actual_after_dist_hg, reward[-1]))
-            # print("current drone {} actual distance to goal is {}, current reward to gaol is {}, current ref line reward is {}, current step reward is {}".format(drone_idx, actual_after_dist_hg, dist_to_goal, dist_to_ref_line, rew))
-
-            # record status of each step.
-            eps_status_holder = self.display_one_eps_status(eps_status_holder, drone_idx, np.array(after_dist_hg),
-                                                            [np.array(dist_to_goal), cross_err_distance, dist_to_ref_line,
-                                                             np.array(near_building_penalty), small_step_penalty,
-                                                             np.linalg.norm(drone_obj.vel), near_goal_reward,
-                                                             seg_reward, nearest_pt, drone_obj.observableSpace,
-                                                             drone_obj.heading, np.array(near_drone_penalty)])
-            # overall_status_record[2].append()  # 3rd is accumulated reward till that step for each agent
-
-        if full_observable_critic_flag:
-            reward = [np.sum(reward) for _ in reward]
-            # done = any(done)
-
-        # if all(check_goal):
-        #     for element_idx, element in enumerate(done):
-        #         done[element_idx] = True
-
-        # ever_reached = [agent.reach_target for agent in self.all_agents.values()]
-        # if check_goal.count(True) == 1 and ever_reached.count(True) == 0:
-        #     reward = [ea_rw + 200 for ea_rw in reward]
-        # elif check_goal.count(True) == 2 and ever_reached.count(True) == 1:
-        #     reward = [ea_rw + 400 for ea_rw in reward]
-        # elif check_goal.count(True) == 3 and ever_reached.count(True) == 2:
-        #     reward = [ea_rw + 600 for ea_rw in reward]
-
-        # all_reach_target = all(agent.reach_target == True for agent in self.all_agents.values())
-        # if all_reach_target:  # in this episode all agents have reached their target at least one
-        #     # we cannot just assign a single True to "done", as it must be a list to output from the function.
-        #     done = [True, True, True]
-
-        return reward, done, check_goal, step_reward_record, eps_status_holder, step_collision_record, bound_building_check
-
-
-
     def display_one_eps_status(self, status_holder, drone_idx, cur_dist_to_goal, cur_step_reward):
         status_holder[drone_idx]['Euclidean_dist_to_goal'] = cur_dist_to_goal
         status_holder[drone_idx]['goal_leading_reward'] = cur_step_reward[0]
@@ -4393,7 +3720,7 @@ class env_simulator:
         status_holder[drone_idx]['near_drone_penalty'] = cur_step_reward[11]
         return status_holder
 
-    def step(self, actions, current_ts, acc_max, args, evaluation_by_episode, full_observable_critic_flag, evaluation_by_fixed_ar, include_other_AC, use_nearestN_neigh_wRadar, N_neigh):
+    def step(self, actions, current_ts, acc_max, args, evaluation_by_episode, full_observable_critic_flag):
         next_combine_state = []
         agentCoorKD_list_update = []
         agentRefer_dict = {}  # A dictionary to use agent's current pos as key, their agent name (idx) as value
@@ -4405,24 +3732,6 @@ class env_simulator:
         # based on the input stack of actions we propagate all agents forward
         # for drone_idx, drone_act in actions.items():  # this is for evaluation with default action
         count = 1
-
-        # move cloud
-        if self.cloud_config is not None:
-            for cloud_agent in self.cloud_config:
-                # load cloud's previous position
-                cloud_agent.pre_pos = deepcopy(cloud_agent.pos)
-                cloud_agent.cloud_actual_previous_shape = deepcopy(cloud_agent.cloud_actual_cur_shape)
-
-                # find cloud's next position
-                cloud_start_pos = np.array([cloud_agent.pos.x, cloud_agent.pos.y])
-                cloud_target = np.array([cloud_agent.goal.x, cloud_agent.goal.y])
-                next_position = calculate_next_position(cloud_start_pos, cloud_target, cloud_agent.vel, self.time_step)
-
-                # move cloud to new position
-                cloud_agent.pos = Point(next_position[0], next_position[1])
-                cloud_agent.cloud_actual_cur_shape = cloud_agent.pos.buffer(cloud_agent.radius)
-                cloud_agent.trajectory.append(cloud_agent.pos)
-
         for drone_idx_obj, drone_act in zip(self.all_agents.items(), actions):
             drone_idx = drone_idx_obj[0]
             drone_obj = drone_idx_obj[1]
@@ -4436,20 +3745,6 @@ class env_simulator:
                         # fill previous acceleration
             self.all_agents[drone_idx].pre_acc = deepcopy(self.all_agents[drone_idx].acc)
             # print("deepcopy done, time used {} milliseconds".format((time.time()-start_deepcopy_time)*1000))
-
-            if args.mode == 'eval' and args.noCR=='yes':
-                if self.all_agents[drone_idx].ini_eta is not None:
-                    if current_ts < self.all_agents[drone_idx].ini_eta:
-                        continue  # we skip this agent during step()
-                    else:
-                        self.all_agents[drone_idx].ini_eta = None  # once the AC move into the play, we can make eta become None, to signify that it is activated
-
-            # if args.mode == 'eval' and evaluation_by_fixed_ar == True:
-            #     if self.all_agents[drone_idx].eta is not None:
-            #         if current_ts < self.all_agents[drone_idx].eta:
-            #             continue
-            #         else:
-            #             self.all_agents[drone_idx].eta = None  # once the AC move into the play, we can make eta become None, to signify that it is activated
 
             if args.mode == 'eval' and evaluation_by_episode == False:
                 if self.all_agents[drone_idx].reach_target == True \
@@ -4467,102 +3762,56 @@ class env_simulator:
             # -------------- end of speed & heading angle control ---------------------#
 
             # ----------------- acceleration in x and acceleration in y state transition control for training-------------------- #
-            if args.noCR=='yes':
-                x, y = self.all_agents[drone_idx].pos
-                v_x, v_y = self.all_agents[drone_idx].vel
-                reference_path = self.all_agents[drone_idx].ref_line
+            ax, ay = drone_act[0], drone_act[1]
 
-                # Get the target point on the path
-                target_x, target_y = get_target_point(x, y, reference_path, lookahead_distance=5.0, radius=2.5)
+            ax = ax * coe_a
+            ay = ay * coe_a
 
-                # Compute desired velocity towards the target point
-                v_x_des, v_y_des = desired_velocity(x, y, target_x, target_y)
+            # record current drone's acceleration
+            self.all_agents[drone_idx].acc = np.array([ax, ay])
 
-                # Compute acceleration
-                a_x, a_y = compute_acceleration(v_x, v_y, v_x_des, v_y_des, max_acc=coe_a, dt=self.time_step)
+            # check velocity limit
+            curVelx = self.all_agents[drone_idx].vel[0] + ax * self.time_step
+            curVely = self.all_agents[drone_idx].vel[1] + ay * self.time_step
+            next_heading = math.atan2(curVely, curVelx)
+            if np.linalg.norm([curVelx, curVely]) >= self.all_agents[drone_idx].maxSpeed:
 
-                # new vel
-                # Update velocity
-                v_x_new = v_x + a_x * self.time_step
-                v_y_new = v_y + a_y * self.time_step
+                # update host velocity when chosen speed has exceeded the max speed
+                hvx = self.all_agents[drone_idx].maxSpeed * math.cos(next_heading)
+                hvy = self.all_agents[drone_idx].maxSpeed * math.sin(next_heading)
+                self.all_agents[drone_idx].vel = np.array([hvx, hvy])
+            else:
+                # update host velocity when max speed is not exceeded
+                self.all_agents[drone_idx].vel = np.array([curVelx, curVely])
 
-                # Clip velocity to max speed
-                v_total = (v_x_new ** 2 + v_y_new ** 2) ** 0.5
-                if v_total > self.all_agents[drone_idx].maxSpeed:
-                    scale = self.all_agents[drone_idx].maxSpeed / v_total
-                    v_x_new *= scale
-                    v_y_new *= scale
+            #print("At time step {} the drone_{}'s output speed is {}".format(current_ts, drone_idx, np.linalg.norm(self.all_agents[drone_idx].vel)))
 
-                # update the drone's position based on the update velocities
-                if drone_obj.reach_target == True:
-                    delta_x = 0
-                    delta_y = 0
-                else:
-                    delta_x = self.all_agents[drone_idx].vel[0] * self.time_step
-                    delta_y = self.all_agents[drone_idx].vel[1] * self.time_step
+            # update the drone's position based on the update velocities
+            if drone_obj.reach_target == True:
+                delta_x = 0
+                delta_y = 0
+            else:
+                delta_x = self.all_agents[drone_idx].vel[0] * self.time_step
+                delta_y = self.all_agents[drone_idx].vel[1] * self.time_step
 
-                #  update acceleration, velocity, position and heading
-                self.all_agents[drone_idx].heading = math.atan2(delta_y, delta_x)
-                self.all_agents[drone_idx].acc = np.array([a_x, a_y])
-                self.all_agents[drone_idx].vel = np.array([v_x_new, v_y_new])
-                self.all_agents[drone_idx].pos = np.array([self.all_agents[drone_idx].pos[0] + delta_x,
-                                                           self.all_agents[drone_idx].pos[1] + delta_y])
+            # update current acceleration of the agent after an action
+            self.all_agents[drone_idx].acc = np.array([ax, ay])
 
-            else:  # update acceleration, velocity, position and heading
-                ax, ay = drone_act[0], drone_act[1]
+            counterCheck_heading = math.atan2(delta_y, delta_x)
 
-                ax = ax * coe_a
-                ay = ay * coe_a
+            self.all_agents[drone_idx].heading = counterCheck_heading
+            # ------------- end of acceleration in x and acceleration in y state transition control ---------------#
 
-                # record current drone's acceleration
-                self.all_agents[drone_idx].acc = np.array([ax, ay])
+            self.all_agents[drone_idx].pos = np.array([self.all_agents[drone_idx].pos[0] + delta_x,
+                                                       self.all_agents[drone_idx].pos[1] + delta_y])
 
-                # check velocity limit
-                curVelx = self.all_agents[drone_idx].vel[0] + ax * self.time_step
-                curVely = self.all_agents[drone_idx].vel[1] + ay * self.time_step
-                next_heading = math.atan2(curVely, curVelx)
-                if np.linalg.norm([curVelx, curVely]) >= self.all_agents[drone_idx].maxSpeed:
-
-                    # update host velocity when chosen speed has exceeded the max speed
-                    hvx = self.all_agents[drone_idx].maxSpeed * math.cos(next_heading)
-                    hvy = self.all_agents[drone_idx].maxSpeed * math.sin(next_heading)
-                    self.all_agents[drone_idx].vel = np.array([hvx, hvy])
-                else:
-                    # update host velocity when max speed is not exceeded
-                    self.all_agents[drone_idx].vel = np.array([curVelx, curVely])
-
-                #print("At time step {} the drone_{}'s output speed is {}".format(current_ts, drone_idx, np.linalg.norm(self.all_agents[drone_idx].vel)))
-
-                # update the drone's position based on the update velocities
-                if drone_obj.reach_target == True:
-                    delta_x = 0
-                    delta_y = 0
-                else:
-                    delta_x = self.all_agents[drone_idx].vel[0] * self.time_step
-                    delta_y = self.all_agents[drone_idx].vel[1] * self.time_step
-
-                # update current acceleration of the agent after an action
-                self.all_agents[drone_idx].acc = np.array([ax, ay])
-
-                counterCheck_heading = math.atan2(delta_y, delta_x)
-                if abs(next_heading - counterCheck_heading) > 1e-3 and self.all_agents[drone_idx].reach_target is not True:
-                    print("debug, heading different")
-                if drone_obj.reach_target != True:
-                    self.all_agents[drone_idx].heading = counterCheck_heading  # only update heading when AC has not reached the goal.
-                # ------------- end of acceleration in x and acceleration in y state transition control ---------------#
-
-                self.all_agents[drone_idx].pos = np.array([self.all_agents[drone_idx].pos[0] + delta_x,
-                                                           self.all_agents[drone_idx].pos[1] + delta_y])
-
-                # cur_circle = Point(self.all_agents[drone_idx].pos[0],
-                #                    self.all_agents[drone_idx].pos[1]).buffer(self.all_agents[drone_idx].protectiveBound,
-                #                                                             cap_style='round')
+            # cur_circle = Point(self.all_agents[drone_idx].pos[0],
+            #                    self.all_agents[drone_idx].pos[1]).buffer(self.all_agents[drone_idx].protectiveBound,
+            #                                                             cap_style='round')
 
             agentCoorKD_list_update.append(self.all_agents[drone_idx].pos)
             agentRefer_dict[(self.all_agents[drone_idx].pos[0],
                              self.all_agents[drone_idx].pos[1])] = self.all_agents[drone_idx].agent_name
-
-
             count = count + 1
         # self.cur_allAgentCoor_KD = KDTree(agentCoorKD_list_update)  # update all agent coordinate KDtree
 
@@ -4570,7 +3819,7 @@ class env_simulator:
 
         # next_state, next_state_norm = self.cur_state_norm_state_fully_observable(agentRefer_dict)
         # start_acceleration_time = time.time()
-        next_state, next_state_norm, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record = self.cur_state_norm_state_v3(agentRefer_dict, full_observable_critic_flag, include_other_AC, use_nearestN_neigh_wRadar, N_neigh, args, evaluation_by_fixed_ar)
+        next_state, next_state_norm, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list = self.cur_state_norm_state_v3(agentRefer_dict, full_observable_critic_flag)
         # print("obtain_current_state, time used {} milliseconds".format(
         #     (time.time() - start_acceleration_time) * 1000))
 
@@ -4665,7 +3914,7 @@ class env_simulator:
         #     fig.canvas.flush_events()
         #     ax.cla()
 
-        return next_state, next_state_norm, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list, agent_masks_record
+        return next_state, next_state_norm, polygons_list, all_agent_st_points, all_agent_ed_points, all_agent_intersection_point_list, all_agent_line_collection, all_agent_mini_intersection_list
 
     def fill_agents(self, max_agent_train, cur_state, norm_cur_state, remove_agent_keys):
         num_lack = int(max_agent_train-len(self.all_agents))
