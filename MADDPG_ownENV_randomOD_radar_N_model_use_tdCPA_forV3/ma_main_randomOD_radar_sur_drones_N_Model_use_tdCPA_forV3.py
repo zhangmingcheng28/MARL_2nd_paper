@@ -1228,8 +1228,8 @@ if __name__ == '__main__':
     parser.add_argument('--scenario', default="simple_spread", type=str)
     parser.add_argument('--max_episodes', default=20000, type=int)  # run for a total of 50000 episodes
     parser.add_argument('--algo', default="maddpg", type=str, help="commnet/bicnet/maddpg")
-    parser.add_argument('--mode', default="eval", type=str, help="train/eval")
-    parser.add_argument('--noCR', default="yes", type=str, help="yes/no")
+    parser.add_argument('--mode', default="train", type=str, help="train/eval")
+    parser.add_argument('--noCR', default="no", type=str, help="yes/no")
     parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=120, type=int)  # maximum play per episode
     # parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode

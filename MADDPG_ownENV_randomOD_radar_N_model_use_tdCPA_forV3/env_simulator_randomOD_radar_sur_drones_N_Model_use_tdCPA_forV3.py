@@ -3330,21 +3330,27 @@ class env_simulator:
             # near_drone_penalty_coef = 1
             # near_drone_penalty_coef = 3
             # near_drone_penalty_coef = 0
-            dist_to_penalty_upperbound = 6
-            # dist_to_penalty_upperbound = 10
+            near_drone_penalty = 0
+            # dist_to_penalty_upperbound = 6
+            dist_to_penalty_upperbound = 10
             dist_to_penalty_lowerbound = 2.5
             # assume when at lowerbound, y = 1
+            all_neigh_dist.sort()
             c_drone = 1 + (dist_to_penalty_lowerbound / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound))
             m_drone = (0 - 1) / (dist_to_penalty_upperbound - dist_to_penalty_lowerbound)
             if nearest_neigh_key is not None:
-                if shortest_neigh_dist >= dist_to_penalty_lowerbound and shortest_neigh_dist <= dist_to_penalty_upperbound:
-                    if neigh_relative_bearing >= 90.0 and neigh_relative_bearing <= 180:
-                        near_drone_penalty_coef = near_drone_penalty_coef * 2
+                for neigh_dist_idx, shortest_neigh_dist in enumerate(all_neigh_dist):
+                    if neigh_dist_idx == 2:
+                    # if neigh_dist_idx == 1:
+                        break
+                    if shortest_neigh_dist >= dist_to_penalty_lowerbound and shortest_neigh_dist <= dist_to_penalty_upperbound:
+                        if neigh_relative_bearing >= 90.0 and neigh_relative_bearing < 270:
+                            near_drone_penalty_coef = near_drone_penalty_coef * 2
+                        else:
+                            pass
+                        near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * (m_drone * shortest_neigh_dist + c_drone)
                     else:
-                        pass
-                    near_drone_penalty = near_drone_penalty_coef * (m_drone * shortest_neigh_dist + c_drone)
-                else:
-                    near_drone_penalty = near_drone_penalty_coef * 0
+                        near_drone_penalty = near_drone_penalty + near_drone_penalty_coef * 0
             else:
                 near_drone_penalty = near_drone_penalty_coef * 0
             # -----end of near drone penalty ----------------
@@ -3488,11 +3494,10 @@ class env_simulator:
             #
             #                                                     (1-(min_dist/turningPtConst)**2))  # value from 0 ~ 1.
             # turningPtConst = 12.5
-            # turningPtConst = 5
-            turningPtConst = 7.5
+            turningPtConst = 5
             if turningPtConst == 12.5:
                 c = 1.25
-            elif turningPtConst == 5 or turningPtConst == 7.5:
+            elif turningPtConst == 5:
                 c = 2
             # # linear building penalty
             # makesure only when min_dist is >=0 and <= turningPtConst, then we activate this penalty

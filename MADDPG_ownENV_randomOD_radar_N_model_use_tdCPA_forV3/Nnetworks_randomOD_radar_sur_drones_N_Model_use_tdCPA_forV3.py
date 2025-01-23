@@ -997,22 +997,22 @@ class critic_single_nearestN_neigh_wRadar(nn.Module):
 class critic_single_TwoPortion_wRadar(nn.Module):
     def __init__(self, critic_obs, n_agents, n_actions, single_history, hidden_state_size):
         super(critic_single_TwoPortion_wRadar, self).__init__()
-        # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
-        # self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.ReLU())
-        # self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.ReLU())
-        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.ReLU())
-        # # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
-        # self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.ReLU(),
-        #                                    nn.Linear(256, 1))
+        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.ReLU())
+        self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.ReLU())
+        self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.ReLU())
+        self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.ReLU())
+        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
+        self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.ReLU(),
+                                           nn.Linear(256, 1))
 
         # use leaky()
-        self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.LeakyReLU(0.01))
-        self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
-        self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
-        self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.LeakyReLU(0.01))
-        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
-        self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
-                                           nn.Linear(256, 1))
+        # self.SA_fc = nn.Sequential(nn.Linear(critic_obs[0]+n_actions, 64), nn.LeakyReLU(0.01))
+        # self.S_all_nei = nn.Sequential(nn.Linear(critic_obs[1], 128), nn.LeakyReLU(0.01))
+        # self.S_radar = nn.Sequential(nn.Linear(critic_obs[2], 128), nn.LeakyReLU(0.01))
+        # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128+128, 512), nn.LeakyReLU(0.01))
+        # # self.merge_fc_grid = nn.Sequential(nn.Linear(64+128, 512), nn.ReLU())
+        # self.out_feature_q = nn.Sequential(nn.Linear(512, 256), nn.LeakyReLU(0.01),
+        #                                    nn.Linear(256, 1))
 
         # multi-heading att?
         # self.own_fc = nn.Sequential(nn.Linear(critic_obs[0], 128), nn.LeakyReLU(0.01))
