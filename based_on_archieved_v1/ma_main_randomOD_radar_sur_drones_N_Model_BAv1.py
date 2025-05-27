@@ -13,9 +13,10 @@ import time
 import matplotlib.animation as animation
 import pickle
 import wandb
-from parameters_randomOD_radar_sur_drones_N_Model_archieved import initialize_parameters
-from maddpg_agent_randomOD_radar_sur_drones_N_Model_archieved import MADDPG
-from utils_randomOD_radar_sur_drones_N_Model_archieved import *
+from parameters_randomOD_radar_sur_drones_N_Model_BAv1 import initialize_parameters
+from maddpg_agent_randomOD_radar_sur_drones_N_Model_BAv1 import MADDPG
+from maddpg_combine_original_agents import MADDPG_original
+from utils_randomOD_radar_sur_drones_N_Model_BAv1 import *
 from copy import deepcopy
 import torch
 import matplotlib.pyplot as plt
@@ -25,7 +26,7 @@ from shapely.strtree import STRtree
 from matplotlib.markers import MarkerStyle
 import math
 from matplotlib.transforms import Affine2D
-from Utilities_own_randomOD_radar_sur_drones_N_Model_archieved import *
+from Utilities_own_randomOD_radar_sur_drones_N_Model_BAv1 import *
 from collections import deque
 import csv
 
@@ -237,7 +238,15 @@ def main(args):
     torch.manual_seed(args.seed)  # this is the seed
 
     if args.algo == "maddpg":
-        model = MADDPG(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args, criticNet_lr, actorNet_lr, GAMMA, TAU, full_observable_critic_flag, use_GRU_flag, use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only, env.normalizer, device)
+        model = MADDPG(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args,
+                       criticNet_lr, actorNet_lr, GAMMA, TAU, full_observable_critic_flag, use_GRU_flag,
+                       use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only,
+                       env.normalizer, device)
+    elif args.algo == "maddpg_combine":
+        model = MADDPG_original(actor_dim, critic_dim, n_actions, actor_hidden_state, gru_history_length, n_agents, args,
+                       criticNet_lr, actorNet_lr, GAMMA, TAU, full_observable_critic_flag, use_GRU_flag,
+                       use_single_portion_selfATT, use_selfATT_with_radar, use_allNeigh_wRadar, own_obs_only,
+                       env.normalizer, device)
 
     episode = 0
     current_row = 0
@@ -331,7 +340,7 @@ def main(args):
         episode_start_time = time.time()
         episode += 1
         eps_reset_start_time = time.time()
-        cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, episode, show=0)
+        cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, episode, show=1)
         eps_reset_time_used = (time.time()-eps_reset_start_time)*1000
         # print("current episode {} reset time used is {} milliseconds".format(episode, eps_reset_time_used))  # need to + 1 here, or else will misrecord as the previous episode
         step_collision_record = [[] for _ in range(total_agentNum)]  # reset at each episode, so that we can record down collision at each step for each agent.
@@ -1123,7 +1132,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--scenario', default="simple_spread", type=str)
     parser.add_argument('--max_episodes', default=20000, type=int)  # run for a total of 50000 episodes
-    parser.add_argument('--algo', default="maddpg", type=str, help ="commnet/bicnet/maddpg")
+    parser.add_argument('--algo', default="maddpg", type=str, help ="commnet/bicnet/maddpg/maddpg_combine")
     parser.add_argument('--mode', default="train", type=str, help="train/eval")
     # parser.add_argument('--episode_length', default=150, type=int)  # maximum play per episode
     parser.add_argument('--episode_length', default=100, type=int)  # maximum play per episode
