@@ -3019,6 +3019,7 @@ class env_simulator:
         reach_target = 20
         survival_penalty = 0
         move_after_reach = -2
+        t_cpa_tresh_second = 2
 
         potential_conflict_count = 0
         final_goal_toadd = 0
@@ -3044,6 +3045,12 @@ class env_simulator:
             if xy[0] is not None and xy[1] is not None:
                 drone_obj.pos = np.array([xy[0], xy[1]])
                 drone_obj.pre_pos = drone_obj.pos
+
+            dist_array = np.array([dist_info for dist_info in drone_obj.observableSpace])
+
+            ascending_array = np.sort(dist_array)
+            min_index = np.argmin(dist_array)
+            min_dist = dist_array[min_index]
 
             # ------- small step penalty calculation -------
             # no penalty if current spd is larger than drone's radius per time step.
@@ -3101,7 +3108,7 @@ class env_simulator:
                 tcpa, d_tcpa, _ = compute_t_cpa_d_cpa_potential_col(
                     self.all_agents[neigh_keys].pos, drone_obj.pos, self.all_agents[neigh_keys].vel, drone_obj.vel,
                     self.all_agents[neigh_keys].protectiveBound, drone_obj.protectiveBound, cur_total_possible_conflict)
-                if tcpa >= 0 and tcpa < (2/self.time_step) and d_tcpa <= drone_obj.protectiveBound*2:
+                if tcpa >= 0 and tcpa < (t_cpa_tresh_second/self.time_step) and d_tcpa <= drone_obj.protectiveBound*2:
                     current_potential_conflict.append(neigh_keys)
 
                 # calculate previous t_cpa/d_cpa
@@ -3109,7 +3116,7 @@ class env_simulator:
                     self.all_agents[neigh_keys].pre_pos, drone_obj.pre_pos, self.all_agents[neigh_keys].pre_vel,
                     drone_obj.pre_vel, self.all_agents[neigh_keys].protectiveBound, drone_obj.protectiveBound,
                     pre_total_possible_conflict)
-                if pre_tcpa >= 0 and pre_tcpa < (2/self.time_step) and d_tcpa <= drone_obj.protectiveBound*2:
+                if pre_tcpa >= 0 and pre_tcpa < (t_cpa_tresh_second/self.time_step) and d_tcpa <= drone_obj.protectiveBound*2:
                     previous_potential_conflict.append(neigh_keys)
 
                 # tcpa is in seconds. Our time step is 0.5 second
@@ -3127,18 +3134,6 @@ class env_simulator:
                 # else:  # tcpa -> -ve, don't have collision risk, no need to update "immediate_tcpa"
                 #     pass
 
-                # obtain DEC
-                dec_coeff = 1
-                if len(previous_potential_conflict) == 0 and len(current_potential_conflict) == 0:
-                    dec = 0
-                elif len(previous_potential_conflict) == 0 and len(current_potential_conflict) != 0:
-                    dec = 1
-                else:
-                    dec = (len(current_potential_conflict) - len(previous_potential_conflict)) / len(previous_potential_conflict)
-                    if dec > 1:
-                        dec = 1
-                # dec_score
-                dec_score = dec_coeff * dec
 
                 # ---- start of make nei invis when nei has reached their goal ----
                 # check if this drone reached their goal yet
@@ -3202,7 +3197,8 @@ class env_simulator:
                                                                        self.all_agents[neigh_keys].pos[1])
                             collision_drones.append(neigh_keys)
                             drone_obj.drone_collision = True
-            # loop over all previous step neighbour, check if the collision at current step, is done by the drones that is previous within the closest two neighbors
+            # loop over all previous step neighbour, check if the collision at current step,
+            # is done by the drones that is previous within the closest two neighbors
             neigh_count = 0
             flag_previous_nearest_two = 0
             for neigh_keys in self.all_agents[drone_idx].pre_surroundingNeighbor:
@@ -3213,6 +3209,46 @@ class env_simulator:
                 neigh_count = neigh_count + 1
                 if neigh_count > 1:
                     break
+
+            # obtain DEC
+
+            # previous_potential_conflict and current_potential_conflict are due to UAVs
+            # we obtain the potential conflicts due to buildings as well
+
+            # addition potential conflict from range sensor
+
+            # current time step
+            cur_building_conflict = 0
+            pre_building_conflict = 0
+            if np.linalg.norm(drone_obj.vel) == 0:
+                t_cpa_building_second = 9999  # assign a very large number when initial velocity for UAV is very small.
+            else:
+                t_cpa_building_second = min_dist / np.linalg.norm(drone_obj.vel)
+            t_cpa_building_sim_step = t_cpa_building_second / self.time_step
+            if t_cpa_building_sim_step < t_cpa_tresh_second/self.time_step:
+                cur_building_conflict = cur_building_conflict + 1
+
+            # previous step
+            if np.linalg.norm(drone_obj.pre_vel) == 0:
+                pre_t_cpa_building_second = 9999  # assign a very large number when initial velocity for UAV is very small.
+            else:
+                pre_t_cpa_building_second = min_dist / np.linalg.norm(drone_obj.pre_vel)
+            pre_t_cpa_building_sim_step = pre_t_cpa_building_second / self.time_step
+            if pre_t_cpa_building_sim_step < t_cpa_tresh_second/self.time_step:
+                pre_building_conflict = pre_building_conflict + 1
+
+            dec_coeff = 1
+            if len(previous_potential_conflict+pre_building_conflict) == 0 and len(current_potential_conflict+cur_building_conflict) == 0:
+                dec = 0
+            elif len(previous_potential_conflict+pre_building_conflict) == 0 and len(current_potential_conflict+cur_building_conflict) != 0:
+                dec = 1
+            else:
+                dec = (len(current_potential_conflict+cur_building_conflict) - len(previous_potential_conflict+pre_building_conflict)) / len(
+                    previous_potential_conflict+pre_building_conflict)
+                if dec > 1:
+                    dec = 1
+            # dec_score
+            dec_score = dec_coeff * dec
 
             # check whether current actions leads to a collision with any buildings in the airspace
 
@@ -3456,11 +3492,7 @@ class env_simulator:
             # penalty for any buildings are getting too near to the host agent
             turningPtConst = drone_obj.detectionRange/2-drone_obj.protectiveBound  # this one should be 12.5
             # dist_array = np.array([dist_info[0] for dist_info in drone_obj.observableSpace])  # used when radar detect other uavs
-            dist_array = np.array([dist_info for dist_info in drone_obj.observableSpace])
 
-            ascending_array = np.sort(dist_array)
-            min_index = np.argmin(dist_array)
-            min_dist = dist_array[min_index]
             # radar_status = drone_obj.observableSpace[min_index][-1]  # radar status for now not required
 
             # ---linear building penalty ---

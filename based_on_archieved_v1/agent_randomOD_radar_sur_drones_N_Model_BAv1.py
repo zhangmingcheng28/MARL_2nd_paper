@@ -38,7 +38,8 @@ class Agent:
         self.heading = None
         # self.detectionRange = 30  # in meters, this is the in diameter
         # self.detectionRange = 40  # in meters, this is the in diameter
-        self.detectionRange = 30  # in meters, this is the in diameter
+        # self.detectionRange = 30  # in meters, this is the in diameter
+        self.detectionRange = 60  # in meters, this is the in diameter
         # self.detectionRange = 100  # in meters, this is the in diameter, 100m, no convergence
         self.protectiveBound = 2.5  # diameter is 2.5*2, this is radius
         # self.protectiveBound = 1.5  # diameter is 2.5*2, this is radius

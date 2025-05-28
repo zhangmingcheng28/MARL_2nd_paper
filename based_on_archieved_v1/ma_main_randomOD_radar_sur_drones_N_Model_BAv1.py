@@ -6,6 +6,7 @@ from openpyxl import Workbook
 import argparse
 import datetime
 import pandas as pd
+from pc_specfic_config import PCconfig
 import numpy as np
 import torch
 import os
@@ -51,7 +52,8 @@ def main(args):
         current_date = today.strftime("%d%m%y")
         current_time = datetime.datetime.now()
         formatted_time = current_time.strftime("%H_%M_%S")
-        file_name = 'D:\MADDPG_2nd_jp/' + str(current_date) + '_' + str(formatted_time)
+        # file_name = 'D:\MADDPG_2nd_jp/' + str(current_date) + '_' + str(formatted_time)
+        file_name = PCconfig().save_file_prefix + str(current_date) + '_' + str(formatted_time)
         if not os.path.exists(file_name):
             os.makedirs(file_name)
         plot_file_name = file_name + '/toplot'
@@ -340,7 +342,7 @@ def main(args):
         episode_start_time = time.time()
         episode += 1
         eps_reset_start_time = time.time()
-        cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, episode, show=1)
+        cur_state, norm_cur_state = env.reset_world(total_agentNum, full_observable_critic_flag, episode, show=0)
         eps_reset_time_used = (time.time()-eps_reset_start_time)*1000
         # print("current episode {} reset time used is {} milliseconds".format(episode, eps_reset_time_used))  # need to + 1 here, or else will misrecord as the previous episode
         step_collision_record = [[] for _ in range(total_agentNum)]  # reset at each episode, so that we can record down collision at each step for each agent.
