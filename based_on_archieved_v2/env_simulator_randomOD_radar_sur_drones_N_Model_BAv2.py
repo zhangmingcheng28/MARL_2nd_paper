@@ -21,7 +21,7 @@ from scipy.spatial import KDTree
 import random
 import itertools
 from copy import deepcopy
-from agent_randomOD_radar_sur_drones_N_Model_BAv1 import Agent
+from agent_randomOD_radar_sur_drones_N_Model_BAv2 import Agent
 import pandas as pd
 import math
 import numpy as np
@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import re
 import time
-from Utilities_own_randomOD_radar_sur_drones_N_Model_BAv1 import *
+from Utilities_own_randomOD_radar_sur_drones_N_Model_BAv2 import *
 import torch as T
 import torch
 import torch.nn.functional as F
@@ -1646,9 +1646,9 @@ class env_simulator:
             # self_obs = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1],
             #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1],
             #                      agent.acc[0], agent.acc[1], agent.heading])
-
+            dec_score = dec_generation(self.all_agents, self.time_step, agentIdx, agent)
             self_obs = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1],
-                                  agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], agent.heading])
+                                  agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], agent.heading, dec_score])
 
             # self_obs = np.array([agent.pos[0], agent.pos[1], agent.vel[0], agent.vel[1],
             #                       agent.goal[-1][0]-agent.pos[0], agent.goal[-1][1]-agent.pos[1], agent.heading, delta_nei[0], delta_nei[1]])
@@ -1678,6 +1678,9 @@ class env_simulator:
 
             norm_self_obs = np.concatenate([norm_pos, norm_vel, norm_deltaG], axis=0)
             norm_self_obs = np.append(norm_self_obs, agent.heading)  # we have to do this because heading dim=1
+            norm_self_obs = np.append(norm_self_obs, dec_score)
+
+
             # norm_self_obs = np.append(norm_self_obs, norm_delta_nei)  # we have to do this because heading dim=1
 
             # norm_self_obs = np.append(norm_self_obs, norm_nearest_neigh)
@@ -3101,40 +3104,8 @@ class env_simulator:
             all_neigh_dist = []
             neigh_relative_bearing = None
             neigh_collision_bearing = None
-            previous_potential_conflict = []
-            current_potential_conflict = []
+
             for neigh_keys in self.all_agents[drone_idx].surroundingNeighbor:
-                # calculate current t_cpa/d_cpa
-                tcpa, d_tcpa, _ = compute_t_cpa_d_cpa_potential_col(
-                    self.all_agents[neigh_keys].pos, drone_obj.pos, self.all_agents[neigh_keys].vel, drone_obj.vel,
-                    self.all_agents[neigh_keys].protectiveBound, drone_obj.protectiveBound, cur_total_possible_conflict)
-                if tcpa >= 0 and tcpa < (t_cpa_tresh_second/self.time_step) and d_tcpa <= drone_obj.protectiveBound*2:
-                    current_potential_conflict.append(neigh_keys)
-
-                # calculate previous t_cpa/d_cpa
-                pre_tcpa, pre_d_tcpa, _ = compute_t_cpa_d_cpa_potential_col(
-                    self.all_agents[neigh_keys].pre_pos, drone_obj.pre_pos, self.all_agents[neigh_keys].pre_vel,
-                    drone_obj.pre_vel, self.all_agents[neigh_keys].protectiveBound, drone_obj.protectiveBound,
-                    pre_total_possible_conflict)
-                if pre_tcpa >= 0 and pre_tcpa < (t_cpa_tresh_second/self.time_step) and d_tcpa <= drone_obj.protectiveBound*2:
-                    previous_potential_conflict.append(neigh_keys)
-
-                # tcpa is in seconds. Our time step is 0.5 second
-
-                # find the neigh that has the highest collision probability at current step
-                # if tcpa >= 0 and tcpa < immediate_tcpa:  # tcpa -> +ve
-                #     immediate_tcpa = tcpa
-                #     immediate_d_tcpa = d_tcpa
-                #     immediate_collision_neigh_key = neigh_keys
-                # elif tcpa == -10:  # tcpa equals to special number, -10, meaning two drone relative velocity equals to 0
-                #     if d_tcpa < immediate_tcpa: # if currently relative velocity equals to 0, we move on to check their current relative distance
-                #         immediate_tcpa = tcpa  # indicate current neigh has a 0 relative velocity
-                #         immediate_d_tcpa = d_tcpa
-                #         immediate_collision_neigh_key = neigh_keys
-                # else:  # tcpa -> -ve, don't have collision risk, no need to update "immediate_tcpa"
-                #     pass
-
-
                 # ---- start of make nei invis when nei has reached their goal ----
                 # check if this drone reached their goal yet
                 cur_nei_circle = Point(self.all_agents[neigh_keys].pos[0],
@@ -3197,6 +3168,7 @@ class env_simulator:
                                                                        self.all_agents[neigh_keys].pos[1])
                             collision_drones.append(neigh_keys)
                             drone_obj.drone_collision = True
+
             # loop over all previous step neighbour, check if the collision at current step,
             # is done by the drones that is previous within the closest two neighbors
             neigh_count = 0
@@ -3210,45 +3182,8 @@ class env_simulator:
                 if neigh_count > 1:
                     break
 
-            # obtain DEC
-
-            # previous_potential_conflict and current_potential_conflict are due to UAVs
-            # we obtain the potential conflicts due to buildings as well
-
-            # addition potential conflict from range sensor
-
-            # current time step
-            cur_building_conflict = 0
-            pre_building_conflict = 0
-            if np.linalg.norm(drone_obj.vel) == 0:
-                t_cpa_building_second = 9999  # assign a very large number when initial velocity for UAV is very small.
-            else:
-                t_cpa_building_second = min_dist / np.linalg.norm(drone_obj.vel)
-            t_cpa_building_sim_step = t_cpa_building_second / self.time_step
-            if t_cpa_building_sim_step < t_cpa_tresh_second/self.time_step:
-                cur_building_conflict = cur_building_conflict + 1
-
-            # previous step
-            if np.linalg.norm(drone_obj.pre_vel) == 0:
-                pre_t_cpa_building_second = 9999  # assign a very large number when initial velocity for UAV is very small.
-            else:
-                pre_t_cpa_building_second = min_dist / np.linalg.norm(drone_obj.pre_vel)
-            pre_t_cpa_building_sim_step = pre_t_cpa_building_second / self.time_step
-            if pre_t_cpa_building_sim_step < t_cpa_tresh_second/self.time_step:
-                pre_building_conflict = pre_building_conflict + 1
-
-            dec_coeff = 1
-            if len(previous_potential_conflict)+pre_building_conflict == 0 and len(current_potential_conflict)+cur_building_conflict == 0:
-                dec = 0
-            elif len(previous_potential_conflict)+pre_building_conflict == 0 and len(current_potential_conflict)+cur_building_conflict != 0:
-                dec = 1
-            else:
-                dec = ((len(current_potential_conflict)+cur_building_conflict) - (len(previous_potential_conflict)+pre_building_conflict)) / (len(
-                    previous_potential_conflict)+pre_building_conflict)
-                if dec > 1:
-                    dec = 1
-            # dec_score
-            dec_score = dec_coeff * dec
+            # dec value generation
+            dec_score = dec_generation(self.all_agents, self.time_step, drone_idx, drone_obj)
 
             # check whether current actions leads to a collision with any buildings in the airspace
 

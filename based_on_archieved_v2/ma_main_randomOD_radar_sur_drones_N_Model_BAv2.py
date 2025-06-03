@@ -14,10 +14,10 @@ import time
 import matplotlib.animation as animation
 import pickle
 import wandb
-from parameters_randomOD_radar_sur_drones_N_Model_BAv1 import initialize_parameters
-from maddpg_agent_randomOD_radar_sur_drones_N_Model_BAv1 import MADDPG
+from parameters_randomOD_radar_sur_drones_N_Model_BAv2 import initialize_parameters
+from maddpg_agent_randomOD_radar_sur_drones_N_Model_BAv2 import MADDPG
 from maddpg_combine_original_agents import MADDPG_original
-from utils_randomOD_radar_sur_drones_N_Model_BAv1 import *
+from utils_randomOD_radar_sur_drones_N_Model_BAv2 import *
 from copy import deepcopy
 import torch
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ from shapely.strtree import STRtree
 from matplotlib.markers import MarkerStyle
 import math
 from matplotlib.transforms import Affine2D
-from Utilities_own_randomOD_radar_sur_drones_N_Model_BAv1 import *
+from Utilities_own_randomOD_radar_sur_drones_N_Model_BAv2 import *
 from collections import deque
 import csv
 
@@ -154,7 +154,8 @@ def main(args):
             # actor_dim = [7, (total_agentNum - 1) * 6, 36, 6]
             # actor_dim = [9, (total_agentNum - 1) * 8, 36, 6]
             # actor_dim = [9, (total_agentNum - 1) * 8, 18, 6]
-            actor_dim = [7, (total_agentNum - 1) * 5, 18, 6]
+            # actor_dim = [7, (total_agentNum - 1) * 5, 18, 6]  # original from BAV1
+            actor_dim = [8, (total_agentNum - 1) * 5, 18, 6]  # BAV2
             # actor_dim = [9, (total_agentNum - 1) * 5, 18, 6]
             # actor_dim = [6, 1 * 5, 36, 6]
             # actor_dim = [6, 2 * 5, 36, 6]
@@ -162,7 +163,8 @@ def main(args):
             # critic_dim = [7, (total_agentNum - 1) * 6, 36, 6]
             # critic_dim = [9, (total_agentNum - 1) * 8, 36, 6]
             # critic_dim = [9, (total_agentNum - 1) * 8, 18, 6]
-            critic_dim = [7, (total_agentNum - 1) * 5, 18, 6]
+            # critic_dim = [7, (total_agentNum - 1) * 5, 18, 6]   # original from BAV1
+            critic_dim = [8, (total_agentNum - 1) * 5, 18, 6]  # BAV2
             # critic_dim = [9, (total_agentNum - 1) * 5, 18, 6]
             # critic_dim = [6, 1 * 5, 36, 6]
             # critic_dim = [6, 2 * 5, 36, 6]
